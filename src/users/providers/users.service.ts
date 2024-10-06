@@ -8,8 +8,10 @@ import {
 import { Pool } from 'pg';
 import { CreateUserDto } from '../dtos/create-user.dto';
 import { v4 as uuidv4 } from 'uuid';
-import { User } from '../interfaces/user.interface';
+import { UserAuth } from '../interfaces/user.interface';
 import { HashingProvider } from 'src/auth/providers/hashing.provider';
+import { FindOneUserByEmailProvider } from './find-one-user-by-email.provider';
+import { GetUserParamDto } from '../dtos/get-user-param.dto';
 
 @Injectable()
 export class UsersService {
@@ -19,9 +21,11 @@ export class UsersService {
 
     @Inject(forwardRef(() => HashingProvider))
     private readonly hashingProvider: HashingProvider,
+
+    private readonly findOneUserByEmailProvider: FindOneUserByEmailProvider,
   ) {}
 
-  async createUser(createUserDto: CreateUserDto) {
+  public async createUser(createUserDto: CreateUserDto) {
     const { name, email, phoneNumber, password, confirmPassword } =
       createUserDto;
 
@@ -42,24 +46,30 @@ export class UsersService {
     const hashingPassword = await this.hashingProvider.hashPassword(password);
 
     await this.db.query(
-      'INSERT INTO users (id, email, password, name, phone_number) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [userId, email, hashingPassword, name, phoneNumber],
+      'INSERT INTO users (id, email, password, name, role, phone_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [userId, email, hashingPassword, name, 'customer', phoneNumber],
     );
 
-    const user = await this.findOneUserById(userId);
+    const user = await this.findOneById(userId);
 
     return user;
   }
 
-  async findOneUserById(userId: string): Promise<User | null> {
+  public async findOneById(
+    getUserParamDto: GetUserParamDto,
+  ): Promise<UserAuth | null> {
     const query = `
-      SELECT id, name, email, phone_number
+      SELECT id, email, password, role, img
       FROM users
       WHERE id = $1
     `;
 
-    const { rows } = await this.db.query(query, [userId]);
+    const { rows } = await this.db.query(query, [getUserParamDto.id]);
 
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async findOneByEmail(email: string) {
+    return this.findOneUserByEmailProvider.findOneByEmail(email);
   }
 }
