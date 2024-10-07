@@ -10,9 +10,11 @@ import { RefreshTokensProvider } from './providers/refresh-tokens.provider';
 import { ConfigModule } from '@nestjs/config';
 import jwtConfig from './configs/jwt.config';
 import { JwtModule } from '@nestjs/jwt';
+import { GoogleAuthenticationController } from './social/google-authentication.controller';
+import { GoogleAuthenticationService } from './social/providers/google-authentication.service';
 
 @Module({
-  controllers: [AuthController],
+  controllers: [AuthController, GoogleAuthenticationController],
   providers: [
     {
       provide: HashingProvider,
@@ -22,12 +24,13 @@ import { JwtModule } from '@nestjs/jwt';
     SignInProvider,
     GenerateTokensProvider,
     RefreshTokensProvider,
+    GoogleAuthenticationService,
   ],
   imports: [
     forwardRef(() => UsersModule),
     ConfigModule.forFeature(jwtConfig),
     JwtModule.registerAsync(jwtConfig.asProvider()),
   ],
-  exports: [HashingProvider],
+  exports: [AuthService, HashingProvider],
 })
 export class AuthModule {}

@@ -12,6 +12,9 @@ import { UserAuth } from '../interfaces/user.interface';
 import { HashingProvider } from 'src/auth/providers/hashing.provider';
 import { FindOneUserByEmailProvider } from './find-one-user-by-email.provider';
 import { GetUserParamDto } from '../dtos/get-user-param.dto';
+import { FindOneByGoogleIdProvider } from './find-one-by-google-id.provider';
+import { CreateGoogleUserProvider } from './create-google-user.provider';
+import { GoogleUser } from '../interfaces/google-user.interface';
 
 @Injectable()
 export class UsersService {
@@ -23,6 +26,8 @@ export class UsersService {
     private readonly hashingProvider: HashingProvider,
 
     private readonly findOneUserByEmailProvider: FindOneUserByEmailProvider,
+    private readonly findOneByGoogleIdProvider: FindOneByGoogleIdProvider,
+    private readonly createGoogleUserProvider: CreateGoogleUserProvider,
   ) {}
 
   public async createUser(createUserDto: CreateUserDto) {
@@ -71,5 +76,13 @@ export class UsersService {
 
   public async findOneByEmail(email: string) {
     return this.findOneUserByEmailProvider.findOneByEmail(email);
+  }
+
+  public async findOneByGoogleId(googleId: string) {
+    return this.findOneByGoogleIdProvider.findOneByGoogleId(googleId);
+  }
+
+  public async createGoogleUser(googleUser: GoogleUser) {
+    return this.createGoogleUserProvider.createGoogleUser(googleUser);
   }
 }
