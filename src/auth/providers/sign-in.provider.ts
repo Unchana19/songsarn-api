@@ -14,7 +14,7 @@ import { SignInDto } from '../dtos/sign-in.dto';
 export class SignInProvider {
   constructor(
     private readonly hashingProvider: HashingProvider,
-    private readonly generateTokenProvider: GenerateTokensProvider,
+    private readonly generateTokensProvider: GenerateTokensProvider,
 
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
@@ -41,7 +41,7 @@ export class SignInProvider {
     }
 
     const { accessToken, refreshToken } =
-      await this.generateTokenProvider.generateTokens(user);
+      await this.generateTokensProvider.generateTokens(user);
 
     return {
       id: user.id,

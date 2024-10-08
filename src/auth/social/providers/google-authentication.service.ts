@@ -49,7 +49,16 @@ export class GoogleAuthenticationService implements OnModuleInit {
       const user = await this.usersService.findOneByGoogleId(googleId);
 
       if (user) {
-        return this.generateTokensProvider.generateTokens(user);
+        const { accessToken, refreshToken } =
+          await this.generateTokensProvider.generateTokens(user);
+        return {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          img: user.img,
+          accessToken,
+          refreshToken,
+        };
       }
 
       const newUser = await this.usersService.createGoogleUser({
@@ -59,7 +68,17 @@ export class GoogleAuthenticationService implements OnModuleInit {
         img,
       });
 
-      return this.generateTokensProvider.generateTokens(newUser);
+      const { accessToken, refreshToken } =
+        await this.generateTokensProvider.generateTokens(newUser);
+
+      return {
+        id: newUser.id,
+        email: newUser.email,
+        role: newUser.role,
+        img: newUser.img,
+        accessToken,
+        refreshToken,
+      };
     } catch (error) {
       throw new UnauthorizedException(error);
     }
