@@ -1,0 +1,9 @@
+POST http://localhost:3001/api/materials
+Content-Type: application/json
+
+{
+  "name": "test",
+  "quantity": "12",
+  "threshold": "3",
+  "unit": "12345678"
+}

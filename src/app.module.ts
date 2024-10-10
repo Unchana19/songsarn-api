@@ -12,6 +12,7 @@ import { AccessTokenGuard } from './auth/guards/access-token.guard';
 import { AuthenticationGuard } from './auth/guards/authentication.guard';
 import jwtConfig from './auth/configs/jwt.config';
 import { JwtModule } from '@nestjs/jwt';
+import { MaterialsModule } from './materials/materials.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { JwtModule } from '@nestjs/jwt';
       load: [databaseConfig, jwtConfig],
       validationSchema: environmentValidation,
     }),
+    MaterialsModule,
   ],
   controllers: [AppController],
   providers: [
