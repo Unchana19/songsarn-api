@@ -1,0 +1,7 @@
+POST http://localhost:3001/api/requisitions
+Content-Type: application/json
+
+{
+  "materialId": "1",
+  "quantity": "14"
+}

@@ -1,5 +1,5 @@
 import { Module, Global } from '@nestjs/common';
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { DatabaseService } from './providers/database.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
       provide: 'PG_CONNECTION',
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
-        const client = new Client({
+        const pool = new Pool({
           user: configService.get<string>('database.user'),
           host: configService.get<string>('database.host'),
           database: configService.get<string>('database.name'),
@@ -19,8 +19,8 @@ import { ConfigService } from '@nestjs/config';
           port: +configService.get<number>('database.port'),
         });
 
-        await client.connect();
-        return client;
+        await pool.connect();
+        return pool;
       },
     },
   ],

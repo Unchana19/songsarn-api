@@ -1,0 +1,26 @@
+POST http://localhost:3001/api/material-purchase-orders
+Content-Type: application/json
+
+{
+  "supplier": "Supplier Name",
+  "material": [
+    {
+      "material_id": "1",
+      "quantity": 100
+    },
+    {
+      "material_id": "2",
+      "quantity": 50
+    }
+  ]
+}
+
+
+POST http://localhost:3001/api/material-purchase-orders/add-material
+Content-Type: application/json
+
+{
+  "mpo_id": "test",
+  "material_id": "test",
+  "quantity": "20"
+}

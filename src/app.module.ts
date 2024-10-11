@@ -13,6 +13,8 @@ import { AuthenticationGuard } from './auth/guards/authentication.guard';
 import jwtConfig from './auth/configs/jwt.config';
 import { JwtModule } from '@nestjs/jwt';
 import { MaterialsModule } from './materials/materials.module';
+import { RequisitionsModule } from './requisitions/requisitions.module';
+import { MaterialPurchaseOrdersModule } from './material-purchase-orders/material-purchase-orders.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { MaterialsModule } from './materials/materials.module';
       validationSchema: environmentValidation,
     }),
     MaterialsModule,
+    RequisitionsModule,
+    MaterialPurchaseOrdersModule,
   ],
   controllers: [AppController],
   providers: [
