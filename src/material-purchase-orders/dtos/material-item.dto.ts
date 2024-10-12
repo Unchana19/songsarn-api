@@ -8,4 +8,8 @@ export class MaterialItemDto {
   @IsNumber()
   @IsNotEmpty()
   quantity: number;
+
+  @IsString()
+  @IsNotEmpty()
+  requisition_id: string;
 }

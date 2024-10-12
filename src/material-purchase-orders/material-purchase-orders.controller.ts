@@ -1,8 +1,7 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { MaterialPurchaseOrdersService } from './providers/material-purchase-orders.service';
 import { CreateMaterialPurchaseOrderDto } from './dtos/create-material-purchase-order.dto';
-import { Auth } from 'src/auth/decorators/auth.decorator';
-import { AuthType } from 'src/auth/enums/auth-type.enum';
+import { UpdateMpoOrderLineDto } from './dtos/update-mpo-order-line.dto';
 
 @Controller('material-purchase-orders')
 export class MaterialPurchaseOrdersController {
@@ -11,12 +10,30 @@ export class MaterialPurchaseOrdersController {
   ) {}
 
   @Post()
-  @Auth(AuthType.None)
   public async createMaterialPurchaseOrder(
     @Body() createMaterialPurchaseOrderDto: CreateMaterialPurchaseOrderDto,
   ) {
     return this.materialPurchaseOrdersService.createMPO(
       createMaterialPurchaseOrderDto,
+    );
+  }
+
+  @Get()
+  public async getAllMaterialPurchaseOrder() {
+    return this.materialPurchaseOrdersService.getAllMPO();
+  }
+
+  @Get('/:id')
+  public async findOneMaterialPurchaseOrder(@Param('id') id: string) {
+    return this.materialPurchaseOrdersService.findOneById(id);
+  }
+
+  @Post('/mpo-order-line')
+  public async updatePriceMpoOrderLine(
+    @Body() updateMpoOrderLineDto: UpdateMpoOrderLineDto,
+  ) {
+    return this.materialPurchaseOrdersService.updatePriceMpoOrderLine(
+      updateMpoOrderLineDto,
     );
   }
 }

@@ -91,4 +91,16 @@ export class RequisitionsService {
 
     return rows;
   }
+
+  public async deleteManyById(id: string[]) {
+    const query = `
+    DELETE FROM material_requisitions
+    WHERE id = ANY($1::character varying[])
+    RETURNING id, material_id, quantity, create_date_time
+  `;
+
+    const { rows } = await this.db.query(query, [id]);
+
+    return rows;
+  }
 }

@@ -1,5 +1,5 @@
 import { IsArray, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
-import { MaterialItemDto } from './add-material-to-mpo.dto';
+import { MaterialItemDto } from './material-item.dto';
 import { Expose, Type } from 'class-transformer';
 
 export class CreateMaterialPurchaseOrderDto {

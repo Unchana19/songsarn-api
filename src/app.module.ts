@@ -15,6 +15,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { MaterialsModule } from './materials/materials.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
 import { MaterialPurchaseOrdersModule } from './material-purchase-orders/material-purchase-orders.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { MaterialPurchaseOrdersModule } from './material-purchase-orders/materia
     MaterialsModule,
     RequisitionsModule,
     MaterialPurchaseOrdersModule,
+    TransactionsModule,
   ],
   controllers: [AppController],
   providers: [

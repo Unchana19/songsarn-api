@@ -24,3 +24,11 @@ Content-Type: application/json
   "material_id": "test",
   "quantity": "20"
 }
+
+POST http://localhost:3001/api/material-purchase-orders/mpo-order-line
+Content-Type: application/json
+
+{
+  "id": "3caf41ee-e728-440a-8615-3ab082de2feb",
+  "price": "500"
+}
