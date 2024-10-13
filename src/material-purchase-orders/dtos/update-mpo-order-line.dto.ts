@@ -1,11 +1,19 @@
-import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { Expose, Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
+import { MaterialOrderLineDto } from './material-order-line.dto';
 
 export class UpdateMpoOrderLineDto {
   @IsString()
   @IsNotEmpty()
-  id: string;
+  mpo_id: string;
 
-  @IsNumber()
+  @IsString()
   @IsNotEmpty()
-  price: number;
+  payment_method: string;
+
+  @Expose()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MaterialOrderLineDto)
+  materials: MaterialOrderLineDto[];
 }

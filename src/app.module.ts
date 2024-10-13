@@ -16,6 +16,10 @@ import { MaterialsModule } from './materials/materials.module';
 import { RequisitionsModule } from './requisitions/requisitions.module';
 import { MaterialPurchaseOrdersModule } from './material-purchase-orders/material-purchase-orders.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { ComponentsModule } from './components/components.module';
+import { CategoriesModule } from './categories/categories.module';
+import { UploadsModule } from './uploads/uploads.module';
+import appConfig from './configs/app.config';
 
 @Module({
   imports: [
@@ -27,13 +31,16 @@ import { TransactionsModule } from './transactions/transactions.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env.local',
-      load: [databaseConfig, jwtConfig],
+      load: [appConfig, databaseConfig, jwtConfig],
       validationSchema: environmentValidation,
     }),
     MaterialsModule,
     RequisitionsModule,
     MaterialPurchaseOrdersModule,
     TransactionsModule,
+    ComponentsModule,
+    CategoriesModule,
+    UploadsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -29,6 +29,16 @@ POST http://localhost:3001/api/material-purchase-orders/mpo-order-line
 Content-Type: application/json
 
 {
-  "id": "3caf41ee-e728-440a-8615-3ab082de2feb",
-  "price": "500"
+  "mpo_id": "0035ce0e-0d36-4c0a-8c14-460852e40f73",
+  "payment_method": "Cash",
+  "materials": [
+    {
+      "mpo_ol_id": "3caf41ee-e728-440a-8615-3ab082de2feb",
+      "price": 100
+    },
+    {
+      "mpo_ol_id": "41c145ff-8b05-4610-a92d-eec7ae413d26",
+      "price": 150
+    }
+  ]
 }

@@ -1,0 +1,6 @@
+PATCH http://localhost:3001/api/material-purchase-orders
+Content-Type: application/json
+
+{
+  "id": "f8baa0d1-bb75-496d-9626-3f0c3b987553"
+}

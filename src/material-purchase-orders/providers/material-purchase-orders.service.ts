@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 import { CreateMaterialPurchaseOrderDto } from '../dtos/create-material-purchase-order.dto';
 import { v4 as uuidv4 } from 'uuid';
@@ -6,6 +6,10 @@ import { MPOStatus } from '../enums/material-purchase-orders-status.enum';
 import { RequisitionsService } from 'src/requisitions/provider/requisitions.service';
 import { TransactionsService } from 'src/transactions/providers/transactions.service';
 import { UpdateMpoOrderLineDto } from '../dtos/update-mpo-order-line.dto';
+import { UpdateMPOTotalPriceDto } from '../dtos/update-mpo-total-price.dto';
+import { CancelMpoDto } from '../dtos/cancel-mpo.dto';
+import { ReceiveMPODto } from '../dtos/receive-mpo.dto';
+import { MaterialsService } from 'src/materials/providers/materials.service';
 
 @Injectable()
 export class MaterialPurchaseOrdersService {
@@ -15,6 +19,7 @@ export class MaterialPurchaseOrdersService {
 
     private readonly requisitionsService: RequisitionsService,
     private readonly transactionsService: TransactionsService,
+    private readonly materialsService: MaterialsService,
   ) {}
 
   public async createMPO(
@@ -84,7 +89,7 @@ export class MaterialPurchaseOrdersService {
 
   public async getAllMPO() {
     const query = `
-    SELECT id, supplier, status, create_date_time, receive_date_time, total_amount
+    SELECT id, supplier, status, create_date_time, receive_date_time, total_price
     FROM material_purchase_orders
   `;
 
@@ -95,7 +100,7 @@ export class MaterialPurchaseOrdersService {
 
   public async findOneById(id: string) {
     const query = `
-    SELECT mpo.id AS id, mpo.supplier AS supplier, mpo.create_date_time AS create_date_time, mpo.receive_date_time AS receive_date_time, mpo_ol.id AS mpo_ol_id,  m.name AS material_name, mpo_ol.quantity AS material_quantity, m.unit AS material_unit, mpo_ol.price AS material_price, mpo.total_amount AS total_amount
+    SELECT mpo.id AS id, mpo.supplier AS supplier, mpo.create_date_time AS create_date_time, mpo.receive_date_time AS receive_date_time, t.payment_method AS payment_method, mpo_ol.id AS mpo_ol_id, m.id AS material_id, m.name AS material_name, mpo_ol.quantity AS material_quantity, m.unit AS material_unit, mpo_ol.price AS material_price, mpo.total_price AS total_price
     FROM material_purchase_orders AS mpo
     JOIN mpo_order_lines AS mpo_ol ON mpo.id = mpo_ol.mpo_id
     JOIN materials AS m ON mpo_ol.material_id = m.id
@@ -111,6 +116,7 @@ export class MaterialPurchaseOrdersService {
       if (existingOrder) {
         existingOrder.materials.push({
           mpo_ol_id: curr.mpo_ol_id,
+          material_id: curr.material_id,
           material_name: curr.material_name,
           material_quantity: curr.material_quantity,
           material_unit: curr.material_unit,
@@ -122,10 +128,12 @@ export class MaterialPurchaseOrdersService {
           supplier: curr.supplier,
           create_date_time: curr.create_date_time,
           receive_date_time: curr.receive_date_time,
-          total_amount: curr.total_amount,
+          total_price: curr.total_price,
+          payment_method: curr.payment_method,
           materials: [
             {
               mpo_ol_id: curr.mpo_ol_id,
+              material_id: curr.material_id,
               material_name: curr.material_name,
               material_quantity: curr.material_quantity,
               material_unit: curr.material_unit,
@@ -144,22 +152,52 @@ export class MaterialPurchaseOrdersService {
   public async updatePriceMpoOrderLine(
     updateMpoOrderLineDto: UpdateMpoOrderLineDto,
   ) {
-    const { id, price } = updateMpoOrderLineDto;
+    const { mpo_id, payment_method, materials } = updateMpoOrderLineDto;
 
-    const existingMpoOrderLine = await this.findMpoOrderLineById(id);
+    let totalPrice = 0;
 
-    if (!existingMpoOrderLine) {
-      throw new HttpException('Material not found', HttpStatus.NOT_FOUND);
-    }
+    const updatedOrderLines = await Promise.all(
+      materials.map(async (material) => {
+        const query = `
+      UPDATE mpo_order_lines
+      SET price = $1
+      WHERE id = $2
+      RETURNING *
+      `;
+        const values = [material.material_price, material.mpo_ol_id];
+
+        const { rows } = await this.db.query(query, values);
+
+        totalPrice += material.material_price;
+
+        return rows[0];
+      }),
+    );
+
+    await this.updateMPOTotalPrice({ mpo_id, total_price: totalPrice });
+
+    await this.transactionsService.updateTransactionByPOId({
+      po_id: mpo_id,
+      payment_method,
+      amount: totalPrice,
+    });
+
+    return updatedOrderLines;
+  }
+
+  public async updateMPOTotalPrice(
+    updateMPOTotalPriceDto: UpdateMPOTotalPriceDto,
+  ) {
+    const { mpo_id, total_price } = updateMPOTotalPriceDto;
 
     const query = `
-    UPDATE mpo_order_lines
-    SET price = $1
+    UPDATE material_purchase_orders
+    SET total_price = $1
     WHERE id = $2
     RETURNING *
   `;
 
-    const { rows } = await this.db.query(query, [price, id]);
+    const { rows } = await this.db.query(query, [total_price, mpo_id]);
 
     return rows[0];
   }
@@ -174,5 +212,50 @@ export class MaterialPurchaseOrdersService {
     const { rows } = await this.db.query(query, [id]);
 
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async receiveMPOById(receiveMPODto: ReceiveMPODto) {
+    const { id } = receiveMPODto;
+
+    const query = `
+    UPDATE material_purchase_orders
+    SET status = $1, receive_date_time = $2
+    WHERE id = $3
+    RETURNING *
+  `;
+
+    const { rows } = await this.db.query(query, ['RECEIVED', new Date(), id]);
+
+    const mpo = await this.findOneById(id);
+
+    for (const material of mpo.materials) {
+      await this.materialsService.updateQuantityById(
+        material.material_id,
+        material.material_quantity,
+      );
+    }
+
+    return rows[0];
+  }
+
+  public async cancelMPOById(cancelMpoDto: CancelMpoDto) {
+    const { id } = cancelMpoDto;
+    const query = `
+    UPDATE material_purchase_orders
+    SET status = $1, total_price = $2, cancel_date_time = $3
+    WHERE id = $4
+    RETURNING *
+  `;
+
+    const { rows } = await this.db.query(query, [
+      'CANCELED',
+      0,
+      new Date(),
+      id,
+    ]);
+
+    await this.transactionsService.cancelTransactionByPOID(id);
+
+    return rows[0];
   }
 }

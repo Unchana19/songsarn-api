@@ -99,4 +99,17 @@ export class MaterialsService {
 
     return { message: 'Material deleted successfully' };
   }
+
+  public async updateQuantityById(id: string, quantity: number) {
+    const query = `
+    UPDATE materials
+    SET quantity = quantity + $1
+    WHERE id = $2
+    RETURNING id, name, quantity, threshold, unit
+  `;
+
+    const { rows } = await this.db.query(query, [quantity, id]);
+
+    return rows[0];
+  }
 }
