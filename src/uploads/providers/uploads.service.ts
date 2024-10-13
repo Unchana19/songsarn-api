@@ -35,7 +35,7 @@ export class UploadsService {
         size: file.size,
       };
 
-      return uploadFile.name;
+      return this.configService.get('appConfig.awsS3Url') + uploadFile.name;
     } catch (error) {
       throw new ConflictException(error);
     }
