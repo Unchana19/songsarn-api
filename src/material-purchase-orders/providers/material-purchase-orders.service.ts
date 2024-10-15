@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { CreateMaterialPurchaseOrderDto } from '../dtos/create-material-purchase-order.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { MPOStatus } from '../enums/material-purchase-orders-status.enum';
@@ -10,6 +10,7 @@ import { UpdateMPOTotalPriceDto } from '../dtos/update-mpo-total-price.dto';
 import { CancelMpoDto } from '../dtos/cancel-mpo.dto';
 import { ReceiveMPODto } from '../dtos/receive-mpo.dto';
 import { MaterialsService } from 'src/materials/providers/materials.service';
+import { MaterialItemDto } from '../dtos/material-item.dto';
 
 @Injectable()
 export class MaterialPurchaseOrdersService {
@@ -27,64 +28,66 @@ export class MaterialPurchaseOrdersService {
   ) {
     const { supplier, material } = createMaterialPurchaseOrderDto;
 
+    if (!material || material.length === 0) {
+      throw new Error('At least one material item is required');
+    }
+
     const client = await this.db.connect();
 
     try {
-      const mpoId = uuidv4();
-
-      const mpoQuery = `
-      INSERT INTO material_purchase_orders (id, supplier, status)
-      VALUES ($1, $2, $3)
-      RETURNING *
-    `;
       await client.query('BEGIN');
-      const mpoResult = await client.query(mpoQuery, [
-        mpoId,
-        supplier,
-        MPOStatus.NEW,
-      ]);
-      const mpo = mpoResult.rows[0];
 
-      const itemValues = material
-        .map((_, index) => {
-          const offset = index * 3;
-          return `($1, $${offset + 2}, $${offset + 3}, $${offset + 4})`;
-        })
-        .join(', ');
+      const mpoId = uuidv4();
+      const mpo = await this.insertMPO(client, mpoId, supplier);
+      const items = await this.insertMPOItems(client, mpoId, material);
 
-      const itemParams = [mpo.id];
-      material.forEach((item) => {
-        const newItemId = uuidv4();
-        itemParams.push(newItemId, item.material_id, item.quantity);
-      });
+      await this.transactionsService.create({ po_id: mpoId });
 
-      const itemsQuery = `
-      INSERT INTO mpo_order_lines (mpo_id, id, material_id, quantity)
-      VALUES ${itemValues}
-      RETURNING *
-    `;
-      const itemsResult = await client.query(itemsQuery, itemParams);
-
-      const requisitions = material.map((m) => {
-        return m.requisition_id;
-      });
-
-      await this.transactionsService.craete({ po_id: mpoId });
-
+      const requisitions = material.map((m) => m.requisition_id);
       await this.requisitionsService.deleteManyById(requisitions);
 
       await client.query('COMMIT');
 
-      return {
-        ...mpo,
-        items: itemsResult.rows,
-      };
+      return { ...mpo, items };
     } catch (error) {
       await client.query('ROLLBACK');
-      throw error;
+      console.error('Error creating MPO:', error);
+      throw new Error('Failed to create Material Purchase Order');
     } finally {
       client.release();
     }
+  }
+
+  private async insertMPO(client: PoolClient, mpoId: string, supplier: string) {
+    const query = `
+    INSERT INTO material_purchase_orders (id, supplier, status)
+    VALUES ($1, $2, $3)
+    RETURNING *
+  `;
+    const result = await client.query(query, [mpoId, supplier, MPOStatus.NEW]);
+    return result.rows[0];
+  }
+
+  private async insertMPOItems(
+    client: PoolClient,
+    mpoId: string,
+    materials: MaterialItemDto[],
+  ) {
+    const values = materials
+      .map((_, i) => `($1, $${i * 3 + 2}, $${i * 3 + 3}, $${i * 3 + 4})`)
+      .join(', ');
+    const params = [
+      mpoId,
+      ...materials.flatMap((m) => [uuidv4(), m.material_id, m.quantity]),
+    ];
+
+    const query = `
+    INSERT INTO mpo_order_lines (mpo_id, id, material_id, quantity)
+    VALUES ${values}
+    RETURNING *
+  `;
+    const result = await client.query(query, params);
+    return result.rows;
   }
 
   public async getAllMPO() {

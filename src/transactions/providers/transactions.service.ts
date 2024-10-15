@@ -11,7 +11,7 @@ export class TransactionsService {
     private readonly db: Pool,
   ) {}
 
-  public async craete(createTransactionDto: CreateTransactionDto) {
+  public async create(createTransactionDto: CreateTransactionDto) {
     const { po_id } = createTransactionDto;
 
     const existingTransaction = await this.findOneByPOId(po_id);
