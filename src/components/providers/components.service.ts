@@ -4,6 +4,7 @@ import { CreateComponentDto } from '../dtos/create-component-dto';
 import { v4 as uuidv4 } from 'uuid';
 import { UploadsService } from 'src/uploads/providers/uploads.service';
 import { MaterialItemDto } from '../dtos/material-item.dto';
+import { UpdateComponentDto } from '../dtos/update-component.dto';
 
 @Injectable()
 export class ComponentsService {
@@ -41,12 +42,11 @@ export class ComponentsService {
         await this.insertBomComponents(client, id, materials);
       }
 
+      await client.query('COMMIT');
+
       if (file) {
         await this.updateImg(id, file);
       }
-
-      await client.query('COMMIT');
-
       return this.findOneById(id);
     } catch (error) {
       await client.query('ROLLBACK');
@@ -119,10 +119,10 @@ export class ComponentsService {
   }
 
   public async updateImg(id: string, file?: Express.Multer.File) {
-    const existingCategory = await this.findOneById(id);
+    const existingComponent = await this.findOneById(id);
 
-    if (!existingCategory) {
-      throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
+    if (!existingComponent) {
+      throw new HttpException('Component not found', HttpStatus.NOT_FOUND);
     }
 
     const filename = await this.uploadsService.uploadFile(file, id);
@@ -141,12 +141,147 @@ export class ComponentsService {
 
   public async getAll() {
     const query = `
-      SELECT id, name, type, img
+      SELECT id, category_id, name, price, img
       FROM components
     `;
 
     const { rows } = await this.db.query(query);
 
     return rows;
+  }
+
+  public async getBOMById(id: string) {
+    const query = `
+    SELECT 
+      m.id AS material_id, 
+      m.name AS material_name, 
+      bom.quantity AS material_quantity, 
+      m.unit AS material_unit, 
+      m.threshold AS material_threshold
+    FROM bom_components AS bom
+    JOIN components c ON bom.component_id = c.id
+    JOIN materials m ON bom.material_id = m.id
+    WHERE c.id = $1
+  `;
+
+    const { rows } = await this.db.query(query, [id]);
+
+    const result = {
+      id: id,
+      materials: rows.map((row) => ({
+        id: row.material_id,
+        name: row.material_name,
+        quantity: row.material_quantity,
+        unit: row.material_unit,
+        threshold: row.material_threshold,
+      })),
+    };
+
+    return result;
+  }
+
+  public async updateById(
+    updateComponentDto: UpdateComponentDto,
+    file?: Express.Multer.File,
+  ) {
+    const { id, category_id, name, price, materials } = updateComponentDto;
+
+    const existingComponent = await this.findOneById(id);
+    if (!existingComponent) {
+      throw new HttpException('Component not found', HttpStatus.NOT_FOUND);
+    }
+
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const updateComponentQuery = `
+        UPDATE components
+        SET category_id = $1, name = $2, price = $3
+        WHERE id = $4
+        RETURNING *
+      `;
+      await client.query(updateComponentQuery, [category_id, name, price, id]);
+
+      await client.query('DELETE FROM bom_components WHERE component_id = $1', [
+        id,
+      ]);
+
+      if (materials && materials.length > 0) {
+        await this.insertBomComponents(client, id, materials);
+      }
+
+      await client.query('COMMIT');
+
+      if (file) {
+        await this.updateImg(id, file);
+      }
+
+      const updatedComponent = await this.findOneById(id);
+      const updatedBOM = await this.getBOMById(id);
+
+      return { ...updatedComponent, bom: updatedBOM };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error updating component:', error);
+      throw new HttpException(
+        'Failed to update component',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      client.release();
+      return this.findOneById(id);
+    }
+  }
+
+  public async deleteById(id: string) {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const existingComponent = await this.findOneById(id);
+      if (!existingComponent) {
+        throw new HttpException('Component not found', HttpStatus.NOT_FOUND);
+      }
+
+      await client.query('DELETE FROM bom_components WHERE component_id = $1', [
+        id,
+      ]);
+
+      if (existingComponent.img) {
+        await this.uploadsService.deleteFile(existingComponent.img);
+      }
+
+      const deleteQuery = 'DELETE FROM components WHERE id = $1 RETURNING *';
+      const { rows } = await client.query(deleteQuery, [id]);
+
+      await client.query('COMMIT');
+
+      if (rows.length === 0) {
+        throw new HttpException(
+          'Failed to delete component',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      return {
+        message: 'Component deleted successfully',
+        deletedComponent: rows[0],
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error deleting component:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to delete component',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      client.release();
+    }
   }
 }
