@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsNumber, IsString, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateMaterialDto {
   @IsString()
@@ -18,4 +24,8 @@ export class CreateMaterialDto {
   @IsNumber()
   @IsNotEmpty()
   threshold: number;
+
+  @IsString()
+  @IsOptional()
+  color?: string;
 }

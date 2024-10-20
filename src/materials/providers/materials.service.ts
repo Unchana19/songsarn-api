@@ -12,14 +12,11 @@ export class MaterialsService {
   ) {}
 
   public async create(createMaterialDto: CreateMaterialDto) {
-    const { name, quantity, threshold, unit } = createMaterialDto;
+    const { name, quantity, threshold, unit, color } = createMaterialDto;
 
-    const existingMaterial = await this.db.query(
-      'SELECT * FROM materials WHERE name = $1',
-      [name],
-    );
+    const existingMaterial = await this.findOneByName(name);
 
-    if (existingMaterial.rows.length > 0) {
+    if (existingMaterial) {
       throw new HttpException(
         'Material already exists',
         HttpStatus.BAD_REQUEST,
@@ -29,8 +26,8 @@ export class MaterialsService {
     const id = uuidv4();
 
     await this.db.query(
-      'INSERT INTO materials (id, name, quantity, threshold, unit) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [id, name, quantity, threshold, unit],
+      'INSERT INTO materials (id, name, quantity, threshold, unit, color) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [id, name, quantity, threshold, unit, color],
     );
 
     const material = this.findOneById(id);
@@ -40,7 +37,7 @@ export class MaterialsService {
 
   public async findOneById(id: string) {
     const query = `
-      SELECT id, name, quantity, threshold, unit
+      SELECT id, name, quantity, threshold, unit, color
       FROM materials
       WHERE id = $1
     `;
@@ -50,9 +47,21 @@ export class MaterialsService {
     return rows.length > 0 ? rows[0] : null;
   }
 
+  public async findOneByName(name: string) {
+    const query = `
+      SELECT id, name, quantity, threshold, unit, color
+      FROM materials
+      WHERE name = $1
+    `;
+
+    const { rows } = await this.db.query(query, [name]);
+
+    return rows.length > 0 ? rows[0] : null;
+  }
+
   public async getAllMaterials() {
     const query = `
-    SELECT id, name, quantity, threshold, unit
+    SELECT id, name, quantity, threshold, unit, color
     FROM materials
   `;
 
@@ -62,7 +71,7 @@ export class MaterialsService {
   }
 
   public async updateById(updateMaterialDto: UpdateMaterialDto) {
-    const { id, name, quantity, threshold, unit } = updateMaterialDto;
+    const { id, name, quantity, threshold, unit, color } = updateMaterialDto;
 
     const existingMaterial = await this.findOneById(id);
 
@@ -72,9 +81,9 @@ export class MaterialsService {
 
     const query = `
     UPDATE materials
-    SET name = $1, quantity = $2, threshold = $3, unit = $4
-    WHERE id = $5
-    RETURNING id, name, quantity, threshold, unit
+    SET name = $1, quantity = $2, threshold = $3, unit = $4, color = $5
+    WHERE id = $6
+    RETURNING id, name, quantity, threshold, unit, color
   `;
 
     const { rows } = await this.db.query(query, [
@@ -82,6 +91,7 @@ export class MaterialsService {
       quantity,
       threshold,
       unit,
+      color,
       id,
     ]);
 
@@ -105,11 +115,23 @@ export class MaterialsService {
     UPDATE materials
     SET quantity = quantity + $1
     WHERE id = $2
-    RETURNING id, name, quantity, threshold, unit
+    RETURNING id, name, quantity, threshold, unit, color
   `;
 
     const { rows } = await this.db.query(query, [quantity, id]);
 
     return rows[0];
+  }
+
+  public async getAllColors() {
+    const query = `
+      SELECT id, name, color
+      FROM materials
+      WHERE color IS NOT NULL
+  `;
+
+    const { rows } = await this.db.query(query);
+
+    return rows;
   }
 }

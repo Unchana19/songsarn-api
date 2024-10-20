@@ -25,6 +25,11 @@ export class MaterialsController {
     return this.materialsService.getAllMaterials();
   }
 
+  @Get('colors')
+  public async getAllColors() {
+    return this.materialsService.getAllColors();
+  }
+
   @Patch()
   public async updateMaterial(@Body() updateMaterial: UpdateMaterialDto) {
     return this.materialsService.updateById(updateMaterial);
