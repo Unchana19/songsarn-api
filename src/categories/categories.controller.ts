@@ -32,6 +32,11 @@ export class CategoriesController {
     return this.categoriesService.getAll();
   }
 
+  @Get('/component-categories')
+  public async getAllComponentCategories() {
+    return this.categoriesService.getAllComponentCategories();
+  }
+
   @Patch()
   @UseInterceptors(FileInterceptor('file'))
   public async updateCategory(

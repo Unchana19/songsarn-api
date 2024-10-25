@@ -164,4 +164,16 @@ export class CategoriesService {
 
     return rows[0];
   }
+
+  public async getAllComponentCategories() {
+    const query = `
+      SELECT id, name, type, img
+      FROM categories
+      WHERE type = $1
+    `;
+
+    const { rows } = await this.db.query(query, ['component']);
+
+    return rows.length > 0 ? rows : null;
+  }
 }
