@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   Query,
@@ -35,6 +36,11 @@ export class CategoriesController {
   @Get('/component-categories')
   public async getAllComponentCategories() {
     return this.categoriesService.getAllComponentCategories();
+  }
+
+  @Get('/:id')
+  public async getBOMCategories(@Param('id') id: string) {
+    return this.categoriesService.getBOMCategoriesById(id);
   }
 
   @Patch()

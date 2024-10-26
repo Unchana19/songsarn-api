@@ -5,10 +5,10 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { MaterialItemDto } from './material-item.dto';
+import { ComponentItemsDto } from './component-items.dto';
 import { Type } from 'class-transformer';
 
-export class CreateComponentDto {
+export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
   category_id: string;
@@ -17,20 +17,16 @@ export class CreateComponentDto {
   @IsNotEmpty()
   name: string;
 
+  @IsString()
+  @IsNotEmpty()
+  detail: string;
+
   @IsNumber()
   @IsNotEmpty()
   price: number;
 
-  @IsNumber()
-  @IsNotEmpty()
-  color_primary_use: number;
-
-  @IsNumber()
-  @IsNotEmpty()
-  color_pattern_use: number;
-
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => MaterialItemDto)
-  materials: MaterialItemDto[];
+  @Type(() => ComponentItemsDto)
+  components: ComponentItemsDto[];
 }

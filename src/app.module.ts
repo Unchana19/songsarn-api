@@ -19,6 +19,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { ComponentsModule } from './components/components.module';
 import { CategoriesModule } from './categories/categories.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { ProductsModule } from './products/products.module';
 import appConfig from './configs/app.config';
 
 @Module({
@@ -41,6 +42,7 @@ import appConfig from './configs/app.config';
     ComponentsModule,
     CategoriesModule,
     UploadsModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [

@@ -19,7 +19,14 @@ export class ComponentsService {
     createComponentDto: CreateComponentDto,
     file?: Express.Multer.File,
   ) {
-    const { category_id, name, price, materials } = createComponentDto;
+    const {
+      category_id,
+      name,
+      price,
+      color_primary_use,
+      color_pattern_use,
+      materials,
+    } = createComponentDto;
 
     const existingComponent = await this.findOneByName(name);
 
@@ -36,7 +43,15 @@ export class ComponentsService {
       await client.query('BEGIN');
 
       const id = uuidv4();
-      await this.insertComponent(client, id, category_id, name, price);
+      await this.insertComponent(
+        client,
+        id,
+        category_id,
+        name,
+        price,
+        color_primary_use,
+        color_pattern_use,
+      );
 
       if (materials && materials.length > 0) {
         await this.insertBomComponents(client, id, materials);
@@ -66,10 +81,19 @@ export class ComponentsService {
     category_id: string,
     name: string,
     price: number,
+    color_primary_use: number,
+    color_pattern_use: number,
   ): Promise<any> {
     const query =
-      'INSERT INTO components (id, category_id, name, price) VALUES ($1, $2, $3, $4) RETURNING *';
-    const result = await client.query(query, [id, category_id, name, price]);
+      'INSERT INTO components (id, category_id, name, price, color_primary_use, color_pattern_use) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *';
+    const result = await client.query(query, [
+      id,
+      category_id,
+      name,
+      price,
+      color_primary_use,
+      color_pattern_use,
+    ]);
     return result.rows[0];
   }
 
@@ -141,7 +165,7 @@ export class ComponentsService {
 
   public async getAll() {
     const query = `
-      SELECT id, category_id, name, price, img
+      SELECT id, category_id, name, price, color_primary_use, color_pattern_use, img
       FROM components
     `;
 
@@ -184,7 +208,15 @@ export class ComponentsService {
     updateComponentDto: UpdateComponentDto,
     file?: Express.Multer.File,
   ) {
-    const { id, category_id, name, price, materials } = updateComponentDto;
+    const {
+      id,
+      category_id,
+      name,
+      price,
+      color_primary_use,
+      color_pattern_use,
+      materials,
+    } = updateComponentDto;
 
     const existingComponent = await this.findOneById(id);
     if (!existingComponent) {
@@ -198,11 +230,18 @@ export class ComponentsService {
 
       const updateComponentQuery = `
         UPDATE components
-        SET category_id = $1, name = $2, price = $3
-        WHERE id = $4
+        SET category_id = $1, name = $2, price = $3, color_primary_use = $4, color_pattern_use = $5
+        WHERE id = $6
         RETURNING *
       `;
-      await client.query(updateComponentQuery, [category_id, name, price, id]);
+      await client.query(updateComponentQuery, [
+        category_id,
+        name,
+        price,
+        color_primary_use,
+        color_pattern_use,
+        id,
+      ]);
 
       await client.query('DELETE FROM bom_components WHERE component_id = $1', [
         id,

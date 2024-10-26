@@ -18,7 +18,7 @@ export class CategoriesService {
     createCategoryDto: CreateCategoryDto,
     file?: Express.Multer.File,
   ) {
-    const { name, type } = createCategoryDto;
+    const { name, type, componentCategories } = createCategoryDto;
 
     const existingCategory = await this.findOneByName(name);
 
@@ -29,20 +29,57 @@ export class CategoriesService {
       );
     }
 
-    const id = uuidv4();
+    const client = await this.db.connect();
 
-    await this.db.query(
-      'INSERT INTO categories (id, name, type) VALUES ($1, $2, $3) RETURNING *',
-      [id, name, type],
-    );
+    try {
+      await client.query('BEGIN');
 
-    if (file) {
-      await this.updateImg(id, file);
+      const id = uuidv4();
+
+      await client.query(
+        'INSERT INTO categories (id, name, type) VALUES ($1, $2, $3) RETURNING *',
+        [id, name, type],
+      );
+
+      if (componentCategories && componentCategories.length > 0) {
+        const values = componentCategories
+          .map(
+            (_, index) =>
+              `($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`,
+          )
+          .join(', ');
+
+        const params = componentCategories.flatMap((categoryComponentId) => [
+          uuidv4(),
+          id,
+          categoryComponentId.id,
+        ]);
+
+        const bomQuery = `
+        INSERT INTO bom_categories (id, category_product_id, category_component_id) 
+        VALUES ${values}
+      `;
+
+        await client.query(bomQuery, params);
+      }
+
+      await client.query('COMMIT');
+
+      if (file) {
+        await this.updateImg(id, file);
+      }
+
+      return this.findOneById(id);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating category:', error);
+      throw new HttpException(
+        'Failed to create category',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      client.release();
     }
-
-    const category = await this.findOneById(id);
-
-    return category;
   }
 
   public async findOneById(id: string) {
@@ -105,29 +142,92 @@ export class CategoriesService {
     updateCategoryDto: UpdateCategoryDto,
     file?: Express.Multer.File,
   ) {
-    const { id, name, type } = updateCategoryDto;
-    const existingCategory = await this.findOneById(id);
+    const { id, name, type, componentCategories } = updateCategoryDto;
 
+    const existingCategory = await this.findOneById(id);
     if (!existingCategory) {
       throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
     }
 
-    const query = `
-    UPDATE categories
-    SET name = $1, type = $2
-    WHERE id = $3
-    RETURNING *
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const updateQuery = `
+      UPDATE categories
+      SET name = $1, type = $2
+      WHERE id = $3
+      RETURNING *
     `;
+      await client.query(updateQuery, [name, type, id]);
 
-    await this.db.query(query, [name, type, id]);
+      await client.query(
+        'DELETE FROM bom_categories WHERE category_product_id = $1',
+        [id],
+      );
 
-    if (file) {
-      await this.updateImg(id, file);
+      if (componentCategories && componentCategories.length > 0) {
+        const values = componentCategories
+          .map(
+            (_, index) =>
+              `($${index * 3 + 1}, $${index * 3 + 2}, $${index * 3 + 3})`,
+          )
+          .join(', ');
+
+        const params = componentCategories.flatMap((componentCategoryId) => [
+          uuidv4(),
+          id,
+          componentCategoryId.id,
+        ]);
+
+        const bomQuery = `
+        INSERT INTO bom_categories (id, category_product_id, category_component_id) 
+        VALUES ${values}
+      `;
+
+        await client.query(bomQuery, params);
+      }
+
+      await client.query('COMMIT');
+
+      if (file) {
+        await this.updateImg(id, file);
+      }
+
+      const category = await this.findOneById(id);
+      const bomCategories = await this.getBOMCategoriesById(id);
+
+      return {
+        ...category,
+        componentCategories: bomCategories,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error updating category:', error);
+      throw new HttpException(
+        'Failed to update category',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      client.release();
     }
+  }
 
-    const category = await this.findOneById(id);
+  public async getBOMCategoriesById(id: string) {
+    const query = `
+    SELECT 
+      bom.category_component_id AS id,
+      c.name AS name,
+      c.type AS type,
+      c.img AS img
+    FROM bom_categories bom
+    JOIN categories c ON bom.category_component_id = c.id
+    WHERE bom.category_product_id = $1
+  `;
 
-    return category;
+    const { rows } = await this.db.query(query, [id]);
+    return rows;
   }
 
   public async deleteCategoryById(id: string) {
@@ -137,32 +237,57 @@ export class CategoriesService {
       throw new HttpException('Category not found', HttpStatus.NOT_FOUND);
     }
 
-    if (existingCategory.img) {
-      try {
-        await this.uploadsService.deleteFile(existingCategory.img);
-      } catch {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `DELETE FROM bom_categories 
+         WHERE category_product_id = $1 
+         OR category_component_id = $1`,
+        [id],
+      );
+
+      if (existingCategory.img) {
+        try {
+          await this.uploadsService.deleteFile(existingCategory.img);
+        } catch {
+          await client.query('ROLLBACK');
+          throw new HttpException(
+            'Failed to delete image',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
+      const { rows } = await client.query(
+        `DELETE FROM categories
+         WHERE id = $1
+         RETURNING *`,
+        [id],
+      );
+
+      if (rows.length === 0) {
+        await client.query('ROLLBACK');
         throw new HttpException(
-          'Failed to delete image',
-          HttpStatus.BAD_REQUEST,
+          'Failed to delete category',
+          HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
-    }
-    const query = `
-    DELETE FROM categories
-    WHERE id = $1
-    RETURNING *
-  `;
 
-    const { rows } = await this.db.query(query, [id]);
-
-    if (rows.length === 0) {
+      await client.query('COMMIT');
+      return rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error deleting category:', error);
       throw new HttpException(
         'Failed to delete category',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    } finally {
+      client.release();
     }
-
-    return rows[0];
   }
 
   public async getAllComponentCategories() {
