@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -11,6 +13,7 @@ import {
 import { ProductsService } from './providers/products.service';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UpdateProductDto } from './dtos/update-product.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -30,8 +33,22 @@ export class ProductsController {
     return this.productsService.getAll();
   }
 
+  @Get('/:id')
+  public async getBOMProducts(@Param('id') id: string) {
+    return this.productsService.getBOM(id);
+  }
+
+  @Patch()
+  @UseInterceptors(FileInterceptor('file'))
+  public async updateProduct(
+    @Body() updateProductDto: UpdateProductDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.productsService.updateById(updateProductDto, file);
+  }
+
   @Delete()
-  public async deleteComponent(@Query('id') id: string) {
+  public async deleteProduct(@Query('id') id: string) {
     return this.productsService.deleteById(id);
   }
 }
