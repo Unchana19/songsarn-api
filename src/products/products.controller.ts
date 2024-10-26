@@ -14,6 +14,8 @@ import { ProductsService } from './providers/products.service';
 import { CreateProductDto } from './dtos/create-product.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateProductDto } from './dtos/update-product.dto';
+import { Auth } from 'src/auth/decorators/auth.decorator';
+import { AuthType } from 'src/auth/enums/auth-type.enum';
 
 @Controller('products')
 export class ProductsController {
@@ -29,8 +31,21 @@ export class ProductsController {
   }
 
   @Get()
+  @Auth(AuthType.None)
   public async getAllProducts() {
     return this.productsService.getAll();
+  }
+
+  @Get('find-by-id')
+  @Auth(AuthType.None)
+  public async findProductsById(@Query('id') id: string) {
+    return this.productsService.findOneById(id);
+  }
+
+  @Get('find-by-category')
+  @Auth(AuthType.None)
+  public async findProductsByCategory(@Query('categoryId') categoryId: string) {
+    return this.productsService.findByCategory(categoryId);
   }
 
   @Get('/:id')

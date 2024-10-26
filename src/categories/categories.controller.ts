@@ -14,6 +14,8 @@ import { CategoriesService } from './providers/categories.service';
 import { CreateCategoryDto } from './dtos/create-category.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateCategoryDto } from './dtos/update-category.dto';
+import { Auth } from 'src/auth/decorators/auth.decorator';
+import { AuthType } from 'src/auth/enums/auth-type.enum';
 
 @Controller('categories')
 export class CategoriesController {
@@ -33,9 +35,21 @@ export class CategoriesController {
     return this.categoriesService.getAll();
   }
 
+  @Get('/find-one')
+  @Auth(AuthType.None)
+  public async findCategoryById(@Query('id') id: string) {
+    return this.categoriesService.findOneById(id);
+  }
+
   @Get('/component-categories')
   public async getAllComponentCategories() {
     return this.categoriesService.getAllComponentCategories();
+  }
+
+  @Get('/product-categories')
+  @Auth(AuthType.None)
+  public async getAllProductCategories() {
+    return this.categoriesService.getAllProductCategories();
   }
 
   @Get('/:id')

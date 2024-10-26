@@ -128,7 +128,7 @@ export class ProductsService {
     return rows.length > 0 ? rows[0] : null;
   }
 
-  private async findOneById(id: string) {
+  public async findOneById(id: string) {
     const query = `
       SELECT id, category_id, name, price, sale, detail, img
       FROM products
@@ -137,6 +137,17 @@ export class ProductsService {
 
     const { rows } = await this.db.query(query, [id]);
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async findByCategory(categoryId: string) {
+    const query = `
+      SELECT id, category_id, name, price, sale, detail, img
+      FROM products
+      WHERE category_id = $1
+    `;
+
+    const { rows } = await this.db.query(query, [categoryId]);
+    return rows.length > 0 ? rows : null;
   }
 
   private async updateImg(id: string, file: Express.Multer.File) {
@@ -155,8 +166,9 @@ export class ProductsService {
 
   public async getAll() {
     const query = `
-      SELECT id, category_id, name, price, detail, img
+      SELECT id, category_id, name, price, sale, detail, img
       FROM products
+      ORDER BY sale DESC
     `;
 
     const { rows } = await this.db.query(query);

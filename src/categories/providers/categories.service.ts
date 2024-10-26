@@ -301,4 +301,16 @@ export class CategoriesService {
 
     return rows.length > 0 ? rows : null;
   }
+
+  public async getAllProductCategories() {
+    const query = `
+      SELECT id, name, type, img
+      FROM categories
+      WHERE type = $1
+    `;
+
+    const { rows } = await this.db.query(query, ['product']);
+
+    return rows.length > 0 ? rows : null;
+  }
 }
