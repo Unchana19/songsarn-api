@@ -48,6 +48,7 @@ export class CartsService {
       SELECT 
         ol.id AS id,
         ol.quantity AS quantity,
+        p.id AS product_id,
         p.name AS name,
         p.img AS img,
         p.price AS price
@@ -129,22 +130,6 @@ export class CartsService {
       return { ...rows[0], removed: true };
     } catch (error) {
       console.error('Error delete order:', error);
-      throw error;
-    }
-  }
-
-  public async clearCartById(id: string) {
-    try {
-      const query = `
-        DELETE FROM order_lines 
-        WHERE order_id = $1 
-        RETURNING *
-      `;
-
-      const { rows } = await this.db.query(query, [id]);
-      return { ...rows[0], removed: true };
-    } catch (error) {
-      console.error('Error clear cart:', error);
       throw error;
     }
   }

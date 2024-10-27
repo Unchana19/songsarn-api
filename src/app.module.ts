@@ -23,6 +23,7 @@ import { ProductsModule } from './products/products.module';
 import { CustomerPurchaseOrdersModule } from './customer-purchase-orders/customer-purchase-orders.module';
 import { CartsModule } from './carts/carts.module';
 import { DeliveryModule } from './delivery/delivery.module';
+import { HistoryModule } from './history/history.module';
 import appConfig from './configs/app.config';
 
 @Module({
@@ -49,6 +50,7 @@ import appConfig from './configs/app.config';
     CustomerPurchaseOrdersModule,
     CartsModule,
     DeliveryModule,
+    HistoryModule,
   ],
   controllers: [AppController],
   providers: [
