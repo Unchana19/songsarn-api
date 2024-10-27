@@ -27,6 +27,6 @@ export class UsersController {
   @Get('/:id')
   @Auth(AuthType.None)
   public findUserById(@Param() getUserParamDto: GetUserParamDto) {
-    return this.usersService.findOneById(getUserParamDto);
+    return this.usersService.getUserInfoById(getUserParamDto);
   }
 }

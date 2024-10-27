@@ -1,0 +1,6 @@
+POST http://localhost:3001/api/delivery/calculate-fee
+Content-Type: application/json
+{
+  "destinationLat": 14.751452774674819,
+  "destinationLng": 100.44312503235032
+}

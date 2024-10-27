@@ -1,9 +1,13 @@
 export interface User {
   id: string;
-  name: string;
   email: string;
-  phoneNumber: string;
+  name: string;
+  role: string;
+  phone_number?: string;
   img?: string;
+  address?: string;
+  province?: string;
+  zip_code?: string;
 }
 
 export interface UserAuth {

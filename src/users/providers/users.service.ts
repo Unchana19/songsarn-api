@@ -8,7 +8,7 @@ import {
 import { Pool } from 'pg';
 import { CreateUserDto } from '../dtos/create-user.dto';
 import { v4 as uuidv4 } from 'uuid';
-import { UserAuth } from '../interfaces/user.interface';
+import { User, UserAuth } from '../interfaces/user.interface';
 import { HashingProvider } from 'src/auth/providers/hashing.provider';
 import { FindOneUserByEmailProvider } from './find-one-user-by-email.provider';
 import { GetUserParamDto } from '../dtos/get-user-param.dto';
@@ -64,7 +64,21 @@ export class UsersService {
     getUserParamDto: GetUserParamDto,
   ): Promise<UserAuth | null> {
     const query = `
-      SELECT id, email, password, role, img
+      SELECT id, email, password, name, role, img, phone_number, address, lat, lng
+      FROM users
+      WHERE id = $1
+    `;
+
+    const { rows } = await this.db.query(query, [getUserParamDto.id]);
+
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async getUserInfoById(
+    getUserParamDto: GetUserParamDto,
+  ): Promise<User | null> {
+    const query = `
+      SELECT id, email, name, role, img, phone_number, address, lat, lng
       FROM users
       WHERE id = $1
     `;
