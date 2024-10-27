@@ -115,9 +115,24 @@ export class CustomerPurchaseOrdersService {
     start.setDate(start.getDate() + 6);
     end.setDate(end.getDate() + 8);
 
+    const monthAbbr = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
     const formatDate = (date: Date) => {
       const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const month = monthAbbr[date.getMonth()];
       const year = date.getFullYear();
 
       return `${day}-${month}-${year}`;
@@ -206,6 +221,7 @@ export class CustomerPurchaseOrdersService {
         cpo.address,
         cpo.phone_number,
         cpo.total_price,
+        cpo.payment_method,
         JSON_AGG(
           JSON_BUILD_OBJECT(
             'id', ol.id,
@@ -213,7 +229,7 @@ export class CustomerPurchaseOrdersService {
             'name', p.name,
             'price', p.price,
             'quantity', ol.quantity,
-            'image', p.image
+            'image', p.img
           )
         ) as products
       FROM customer_purchase_orders cpo
@@ -228,7 +244,8 @@ export class CustomerPurchaseOrdersService {
         cpo.delivery_price,
         cpo.address,
         cpo.phone_number,
-        cpo.total_price
+        cpo.total_price,
+        cpo.payment_method
     `;
 
     try {
@@ -251,6 +268,7 @@ export class CustomerPurchaseOrdersService {
           payment_status: order.paid_date_time ? 'Completed' : 'Not paid',
           order_status: order.status,
           delivery_date: order.est_delivery_date,
+          payment_method: order.payment_method,
           delivery_details: {
             address: order.address,
             phone: order.phone_number,

@@ -24,6 +24,7 @@ import { CustomerPurchaseOrdersModule } from './customer-purchase-orders/custome
 import { CartsModule } from './carts/carts.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { HistoryModule } from './history/history.module';
+import { PaymentModule } from './payment/payment.module';
 import appConfig from './configs/app.config';
 
 @Module({
@@ -51,6 +52,7 @@ import appConfig from './configs/app.config';
     CartsModule,
     DeliveryModule,
     HistoryModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CustomerPurchaseOrdersService } from './provider/customer-purchase-orders.service';
 import { CreateCPODto } from './dtos/create-cpo.dto';
 
@@ -18,8 +18,8 @@ export class CustomerPurchaseOrdersController {
     return this.customerPurchaseOrdersService.getAllCPOByUserId(id);
   }
 
-  @Get('detail')
-  public async getCPOById(@Query('id') id: string) {
+  @Get('/:id')
+  public async getCPOById(@Param('id') id: string) {
     return this.customerPurchaseOrdersService.getCPOById(id);
   }
 }

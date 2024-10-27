@@ -1,0 +1,6 @@
+POST http://localhost:3001/api/payments/generate-qr
+Content-Type: application/json
+
+{
+  "amount": 100.50
+}
