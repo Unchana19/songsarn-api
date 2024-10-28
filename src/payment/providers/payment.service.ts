@@ -10,6 +10,7 @@ import FormData from 'form-data';
 import { SlipVerifyDto } from '../dtos/slip-verify.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { CustomerPurchaseOrdersService } from 'src/customer-purchase-orders/provider/customer-purchase-orders.service';
+import { TestPaymentDto } from '../dtos/test-payment.dto';
 
 export interface VerificationResult {
   success: boolean;
@@ -241,8 +242,6 @@ export class PaymentService {
       await this.savePaymentDetails(orderId, {
         amount: slipData.amount,
         transaction_id: slipData.transRef,
-        sender_name: slipData.sender.displayName,
-        sender_bank: this.getBankName(slipData.sendingBank),
         transaction_time: slipData.transTimestamp,
       });
 
@@ -297,8 +296,6 @@ export class PaymentService {
     paymentData: {
       amount: number;
       transaction_id: string;
-      sender_name: string;
-      sender_bank: string;
       transaction_time: string;
     },
   ) {
@@ -427,6 +424,112 @@ export class PaymentService {
     } catch (error) {
       console.error('Error getting order creation date:', error);
       throw new Error('Failed to get order creation date');
+    }
+  }
+
+  public async testPayment(testPaymentDto: TestPaymentDto) {
+    const client = await this.db.connect();
+    try {
+      const { cpoId, amount } = testPaymentDto;
+      await client.query('BEGIN');
+
+      const transactionQuery = `
+        INSERT INTO transactions (
+          id,
+          po_id,
+          amount,
+          create_date_time,
+          payment_method,
+          type
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `;
+
+      const transactionValues = [
+        uuidv4(),
+        cpoId,
+        amount,
+        new Date(),
+        'qr',
+        'cpo',
+      ];
+
+      const transactionResult = await client.query(
+        transactionQuery,
+        transactionValues,
+      );
+
+      const updateCPOQuery = `
+        UPDATE customer_purchase_orders 
+        SET 
+          status = 'PAID',
+          paid_date_time = $1
+        WHERE id = $2
+        RETURNING id
+      `;
+
+      await client.query(updateCPOQuery, [new Date(), cpoId]);
+
+      await this.customerPurchaseOrdersService.checkAndCreateMaterialRequisitions(
+        cpoId,
+        client,
+      );
+
+      const historyQuery = `
+        INSERT INTO history (
+          id,
+          cpo_id,
+          status,
+          date_time
+        ) VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `;
+
+      await client.query(historyQuery, [uuidv4(), cpoId, 'PAID', new Date()]);
+
+      const getOrderLinesQuery = `
+        SELECT product_id, quantity 
+        FROM order_lines 
+        WHERE order_id = $1
+      `;
+
+      const orderLines = await client.query(getOrderLinesQuery, [cpoId]);
+
+      if (orderLines.rows.length > 0) {
+        const updateQueries = orderLines.rows.map(
+          (line, index) =>
+            `UPDATE products 
+             SET sale = COALESCE(sale, 0) + $${index * 2 + 1}
+             WHERE id = $${index * 2 + 2}`,
+        );
+
+        const updateSalesQuery = `
+          ${updateQueries.join(';')}
+        `;
+
+        const updateSalesValues = orderLines.rows.flatMap((line) => [
+          line.quantity,
+          line.product_id,
+        ]);
+
+        await client.query(updateSalesQuery, updateSalesValues);
+      }
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        transactionId: transactionResult.rows[0].id,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Database error:', error);
+      throw new HttpException(
+        'Failed to save payment details',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      client.release();
     }
   }
 }

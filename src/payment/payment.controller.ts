@@ -13,10 +13,16 @@ import {
 import { GenerateQRCodeDto } from './dtos/generate-qr-code.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SlipVerifyDto } from './dtos/slip-verify.dto';
+import { TestPaymentDto } from './dtos/test-payment.dto';
 
 @Controller('payments')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
+
+  @Post('test-payment')
+  public async testPayment(@Body() testPaymentDto: TestPaymentDto) {
+    return await this.paymentService.testPayment(testPaymentDto);
+  }
 
   @Post('generate-qr')
   public async generateQR(@Body() generateQRCodeDto: GenerateQRCodeDto) {
