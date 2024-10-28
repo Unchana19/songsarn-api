@@ -4,6 +4,7 @@ import { CreateCPODto } from '../dtos/create-cpo.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { OrderLineItemDto } from '../dtos/order-line-item.dto';
 import { HistoryService } from 'src/history/providers/history.service';
+import { CheckAndCreateMaterialRequisitionsProvider } from './check-create-material-requisition.provider';
 
 @Injectable()
 export class CustomerPurchaseOrdersService {
@@ -12,6 +13,7 @@ export class CustomerPurchaseOrdersService {
     private readonly db: Pool,
 
     private readonly historyService: HistoryService,
+    private readonly checkAndCreateMaterialRequisitionsProvider: CheckAndCreateMaterialRequisitionsProvider,
   ) {}
 
   public async create(createCpoDto: CreateCPODto) {
@@ -135,7 +137,7 @@ export class CustomerPurchaseOrdersService {
       const month = monthAbbr[date.getMonth()];
       const year = date.getFullYear();
 
-      return `${day}-${month}-${year}`;
+      return `${day} ${month} ${year}`;
     };
 
     return `${formatDate(start)} - ${formatDate(end)}`;
@@ -208,6 +210,135 @@ export class CustomerPurchaseOrdersService {
     const { rows } = await this.db.query(query, [id]);
 
     return rows;
+  }
+
+  public async managerGetAllCPO() {
+    const query = `
+      WITH color_usage AS (
+        SELECT 
+          cpo.id as cpo_id,
+          bp.primary_color as material_id,
+          SUM(c.color_primary_use * ol.quantity) as quantity_needed
+        FROM customer_purchase_orders cpo
+        JOIN order_lines ol ON cpo.id = ol.order_id
+        JOIN products p ON ol.product_id = p.id
+        JOIN bom_products bp ON p.id = bp.product_id
+        JOIN components c ON bp.component_id = c.id
+        WHERE cpo.status = 'PAID'
+        GROUP BY cpo.id, bp.primary_color
+        
+        UNION ALL
+        
+        SELECT 
+          cpo.id as cpo_id,
+          bp.pattern_color as material_id,
+          SUM(c.color_pattern_use * ol.quantity) as quantity_needed
+        FROM customer_purchase_orders cpo
+        JOIN order_lines ol ON cpo.id = ol.order_id
+        JOIN products p ON ol.product_id = p.id
+        JOIN bom_products bp ON p.id = bp.product_id
+        JOIN components c ON bp.component_id = c.id
+        WHERE cpo.status = 'PAID' AND bp.pattern_color IS NOT NULL
+        GROUP BY cpo.id, bp.pattern_color
+      ),
+      material_usage AS (
+        SELECT 
+          cpo.id as cpo_id,
+          bc.material_id,
+          SUM(bc.quantity * ol.quantity) as quantity_needed
+        FROM customer_purchase_orders cpo
+        JOIN order_lines ol ON cpo.id = ol.order_id
+        JOIN products p ON ol.product_id = p.id
+        JOIN bom_products bp ON p.id = bp.product_id
+        JOIN components c ON bp.component_id = c.id
+        JOIN bom_components bc ON c.id = bc.component_id
+        JOIN materials m ON bc.material_id = m.id
+        WHERE cpo.status = 'PAID' AND m.color IS NULL
+        GROUP BY cpo.id, bc.material_id
+      ),
+      all_materials AS (
+        SELECT * FROM color_usage WHERE material_id IS NOT NULL
+        UNION ALL
+        SELECT * FROM material_usage
+      ),
+      material_check AS (
+        SELECT 
+          am.cpo_id,
+          am.material_id,
+          m.name as material_name,
+          am.quantity_needed,
+          m.quantity as available_quantity
+        FROM all_materials am
+        JOIN materials m ON m.id = am.material_id
+      )
+      SELECT 
+        cpo.id,
+        cpo.status,
+        cpo.total_price,
+        cpo.est_delivery_date,
+        cpo.paid_date_time,
+        u.name as user_name,
+        h.date_time as last_updated,
+        CASE 
+          WHEN cpo.status = 'PAID' THEN
+            CASE 
+              WHEN EXISTS (
+                SELECT 1 
+                FROM material_check mc
+                WHERE mc.cpo_id = cpo.id 
+                AND mc.quantity_needed > mc.available_quantity
+              ) THEN 'insufficient_materials'
+              WHEN NOT EXISTS (
+                SELECT 1 
+                FROM all_materials am
+                WHERE am.cpo_id = cpo.id
+              ) THEN 'no_materials_found'
+              ELSE 'sufficient_materials'
+            END
+          ELSE NULL
+        END as material_status,
+        (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'material_name', mc.material_name,
+              'needed', mc.quantity_needed,
+              'available', mc.available_quantity,
+              'is_sufficient', mc.quantity_needed <= mc.available_quantity
+            )
+          )
+          FROM material_check mc
+          WHERE mc.cpo_id = cpo.id
+        ) as material_details
+      FROM customer_purchase_orders cpo
+      JOIN users u ON cpo.user_id = u.id
+      LEFT JOIN (
+        SELECT cpo_id, MAX(date_time) as max_date_time
+        FROM history
+        GROUP BY cpo_id
+      ) latest_history ON cpo.id = latest_history.cpo_id
+      LEFT JOIN history h ON h.cpo_id = latest_history.cpo_id 
+        AND h.date_time = latest_history.max_date_time
+      ORDER BY h.date_time DESC
+    `;
+
+    try {
+      const { rows } = await this.db.query(query);
+
+      return rows.map((row) => ({
+        id: row.id,
+        paid_date_time: row.paid_date_time,
+        user_name: row.user_name,
+        status: row.status,
+        total_price: row.total_price,
+        est_delivery_date: row.est_delivery_date,
+        last_updated: row.last_updated,
+        material_status: row.material_status,
+        material_details: row.material_details,
+      }));
+    } catch (error) {
+      console.error('Error getting all CPOs:', error);
+      throw new Error('Failed to get Customer Purchase Orders');
+    }
   }
 
   public async getCPOById(id: string) {
@@ -287,6 +418,329 @@ export class CustomerPurchaseOrdersService {
     } catch (error) {
       console.error('Error getting CPO:', error);
       throw new Error('Failed to get Customer Purchase Order');
+    }
+  }
+
+  public async managerGetCPOById(id: string) {
+    const query = `
+      WITH delivering_date AS (
+        SELECT date_time
+        FROM history
+        WHERE cpo_id = $1 AND status = 'ON DELIVERING'
+        ORDER BY date_time DESC
+        LIMIT 1
+      ),
+      latest_updated AS (
+        SELECT cpo_id, MAX(date_time) as max_date_time
+        FROM history
+        WHERE cpo_id = $1
+        GROUP BY cpo_id
+      ),
+      component_materials AS (
+        SELECT 
+          c.id as component_id,
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'name', m.name,
+              'quantity', bc.quantity,
+              'unit', m.unit
+            )
+          ) as materials
+        FROM components c
+        JOIN bom_components bc ON c.id = bc.component_id
+        JOIN materials m ON bc.material_id = m.id
+        GROUP BY c.id
+      ),
+      product_components AS (
+        SELECT 
+          p.id as product_id,
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'id', c.id,
+              'name', c.name,
+              'img', c.img,
+              'primary_color', JSON_BUILD_OBJECT(
+                'name', m1.name,
+                'color', m1.color
+              ),
+              'pattern_color', JSON_BUILD_OBJECT(
+                'name', m2.name,
+                'color', m2.color
+              ),
+              'materials', cm.materials
+            )
+          ) as components
+        FROM products p
+        JOIN bom_products bp ON p.id = bp.product_id
+        LEFT JOIN components c ON bp.component_id = c.id
+        LEFT JOIN materials m1 ON bp.primary_color = m1.id
+        LEFT JOIN materials m2 ON bp.pattern_color = m2.id
+        LEFT JOIN component_materials cm ON c.id = cm.component_id
+        GROUP BY p.id
+      ),
+      order_products AS (
+        SELECT 
+          ol.id,
+          ol.quantity,
+          JSON_BUILD_OBJECT(
+            'id', p.id,
+            'name', p.name,
+            'img', p.img,
+            'price', p.price,
+            'components', COALESCE(pc.components, '[]')
+          ) as product
+        FROM order_lines ol
+        LEFT JOIN products p ON ol.product_id = p.id
+        LEFT JOIN product_components pc ON p.id = pc.product_id
+        WHERE ol.order_id = $1
+      )
+      SELECT 
+        cpo.id,
+        cpo.status,
+        cpo.paid_date_time,
+        cpo.payment_method,
+        cpo.est_delivery_date,
+        cpo.delivery_price,
+        cpo.total_price,
+        COALESCE(dd.date_time, lu.max_date_time) as last_updated,
+        cpo.address,
+        cpo.phone_number,
+        u.name as user_name,
+        COALESCE(
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'id', op.id,
+              'quantity', op.quantity,
+              'product', op.product
+            )
+          ) FILTER (WHERE op.id IS NOT NULL),
+          '[]'
+        ) as order_lines
+      FROM customer_purchase_orders cpo
+      JOIN users u ON cpo.user_id = u.id
+      LEFT JOIN delivering_date dd ON TRUE
+      JOIN latest_updated lu ON cpo.id = lu.cpo_id
+      LEFT JOIN order_products op ON TRUE
+      WHERE cpo.id = $1
+      GROUP BY 
+        cpo.id,
+        cpo.status,
+        cpo.paid_date_time,
+        cpo.payment_method,
+        cpo.est_delivery_date,
+        dd.date_time,
+        lu.max_date_time,
+        cpo.address,
+        cpo.phone_number,
+        u.name
+    `;
+
+    try {
+      const { rows } = await this.db.query(query, [id]);
+
+      if (rows.length === 0) {
+        throw new Error('Order not found');
+      }
+
+      const order = rows[0];
+      return {
+        id: order.id,
+        status: order.status,
+        user_name: order.user_name,
+        last_updated: order.last_updated,
+        paid_date_time: order.paid_date_time,
+        payment_method: order.payment_method,
+        est_delivery_date: order.est_delivery_date,
+        delivery_price: order.delivery_price,
+        total_price: order.total_price,
+        delivery_details: {
+          address: order.address,
+          phone: order.phone_number,
+        },
+        order_lines: order.order_lines.map((line) => ({
+          id: line.product.id,
+          name: line.product.name,
+          img: line.product.img,
+          price: line.product.price,
+          quantity: line.quantity,
+          components: line.product.components,
+        })),
+      };
+    } catch (error) {
+      console.error('Error getting CPO:', error);
+      throw new Error('Failed to get Customer Purchase Order');
+    }
+  }
+
+  public async checkAndCreateMaterialRequisitions(
+    cpo_id: string,
+    client: PoolClient,
+  ) {
+    return this.checkAndCreateMaterialRequisitionsProvider.checkAndCreateMaterialRequisitions(
+      cpo_id,
+      client,
+    );
+  }
+
+  private async getAllMaterialUsage(cpoId: string) {
+    try {
+      const materialsQuery = `
+      WITH color_usage AS (
+        SELECT 
+          cpo.id as cpo_id,
+          bp.primary_color as material_id,
+          m.name as material_name,
+          m.unit,
+          SUM(c.color_primary_use * ol.quantity) as quantity_needed
+        FROM customer_purchase_orders cpo
+        JOIN order_lines ol ON cpo.id = ol.order_id
+        JOIN products p ON ol.product_id = p.id
+        JOIN bom_products bp ON p.id = bp.product_id
+        JOIN components c ON bp.component_id = c.id
+        JOIN materials m ON bp.primary_color = m.id
+        WHERE cpo.id = $1 AND cpo.status = 'PAID'
+        GROUP BY cpo.id, bp.primary_color, m.name, m.unit
+        
+        UNION ALL
+        
+        SELECT 
+          cpo.id as cpo_id,
+          bp.pattern_color as material_id,
+          m.name as material_name,
+          m.unit,
+          SUM(c.color_pattern_use * ol.quantity) as quantity_needed
+        FROM customer_purchase_orders cpo
+        JOIN order_lines ol ON cpo.id = ol.order_id
+        JOIN products p ON ol.product_id = p.id
+        JOIN bom_products bp ON p.id = bp.product_id
+        JOIN components c ON bp.component_id = c.id
+        JOIN materials m ON bp.pattern_color = m.id
+        WHERE cpo.id = $1 AND cpo.status = 'PAID' AND bp.pattern_color IS NOT NULL
+        GROUP BY cpo.id, bp.pattern_color, m.name, m.unit
+      ),
+      material_usage AS (
+        SELECT 
+          cpo.id as cpo_id,
+          bc.material_id,
+          m.name as material_name,
+          m.unit,
+          SUM(bc.quantity * ol.quantity) as quantity_needed
+        FROM customer_purchase_orders cpo
+        JOIN order_lines ol ON cpo.id = ol.order_id
+        JOIN products p ON ol.product_id = p.id
+        JOIN bom_products bp ON p.id = bp.product_id
+        JOIN components c ON bp.component_id = c.id
+        JOIN bom_components bc ON c.id = bc.component_id
+        JOIN materials m ON bc.material_id = m.id
+        WHERE cpo.id = $1 AND cpo.status = 'PAID' AND m.color IS NULL
+        GROUP BY cpo.id, bc.material_id, m.name, m.unit
+      )
+      SELECT 
+        material_id,
+        material_name,
+        unit,
+        quantity_needed
+      FROM (
+        SELECT * FROM color_usage WHERE material_id IS NOT NULL
+        UNION ALL
+        SELECT * FROM material_usage
+      ) all_materials`;
+
+      const { rows: materials } = await this.db.query(materialsQuery, [cpoId]);
+      return materials;
+    } catch (error) {
+      console.error('Error getting material usage:', error);
+      throw error;
+    }
+  }
+
+  public async deductMaterialQuantities(cpoId: string) {
+    try {
+      const materials = await this.getAllMaterialUsage(cpoId);
+
+      if (materials.length === 0) {
+        return {
+          success: true,
+          message: 'No materials to deduct',
+          materials: [],
+        };
+      }
+
+      const updatedMaterials = [];
+      for (const material of materials) {
+        const updateQuery = `
+        UPDATE materials
+        SET quantity = quantity - $1
+        WHERE id = $2::uuid
+        RETURNING id, name, quantity as remaining_quantity
+      `;
+
+        const { rows } = await this.db.query(updateQuery, [
+          material.quantity_needed,
+          material.material_id,
+        ]);
+
+        updatedMaterials.push({
+          name: material.material_name,
+          used_quantity: material.quantity_needed,
+          remaining_quantity: rows[0].remaining_quantity,
+          unit: material.unit,
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Material quantities deducted successfully',
+        materials: updatedMaterials,
+      };
+    } catch (error) {
+      console.error('Error deducting material quantities:', error);
+      throw error;
+    }
+  }
+
+  public async processCPOById(id: string) {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const updateQuery = `
+        UPDATE customer_purchase_orders 
+        SET status = 'PROCESSING'
+        WHERE id = $1
+        RETURNING id, status
+      `;
+
+      const {
+        rows: [updatedCpo],
+      } = await client.query(updateQuery, [id]);
+
+      if (!updatedCpo) {
+        throw new Error('Order not found');
+      }
+
+      await this.historyService.create({
+        cpo_id: id,
+        status: 'PROCESSING',
+      });
+      const deductionResult = await this.deductMaterialQuantities(id);
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: 'CPO processed successfully',
+        cpo_id: id,
+        new_status: 'PROCESSING',
+        material_updates: deductionResult.materials,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error processing CPO:', error);
+      throw new Error('Failed to process Customer Purchase Order');
+    } finally {
+      client.release();
     }
   }
 }

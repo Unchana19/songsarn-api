@@ -8,6 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import FormData from 'form-data';
 import { SlipVerifyDto } from '../dtos/slip-verify.dto';
+import { v4 as uuidv4 } from 'uuid';
+import { CustomerPurchaseOrdersService } from 'src/customer-purchase-orders/provider/customer-purchase-orders.service';
 
 export interface VerificationResult {
   success: boolean;
@@ -28,23 +30,59 @@ export interface VerificationResult {
   };
 }
 
-interface SlipResponse {
-  amount: number;
-  bank_account: string;
-  ref1: string;
-  ref2: string;
-  ref3: string;
-  sender_bank_account: string;
-  sender_bank_name: string;
-  sender_name: string;
-  service_name: string;
-  time: string;
-  transaction_id: string;
+interface SlipApiResponse {
+  success: boolean;
+  data: {
+    success: boolean;
+    message: string;
+    language: string | null;
+    transRef: string;
+    sendingBank: string;
+    receivingBank: string;
+    transDate: string;
+    transTime: string;
+    transTimestamp: string;
+    sender: {
+      displayName: string;
+      name: string | null;
+      proxy: {
+        type: string | null;
+        value: string | null;
+      };
+      account: {
+        type: string;
+        value: string;
+      };
+    };
+    receiver: {
+      displayName: string;
+      name: string | null;
+      proxy: {
+        type: string;
+        value: string;
+      };
+      account: {
+        type: string;
+        value: string;
+      };
+    };
+    amount: number;
+    paidLocalAmount: number | null;
+    paidLocalCurrency: string | null;
+    countryCode: string;
+    transFeeAmount: number | null;
+    ref1: string;
+    ref2: string;
+    ref3: string;
+    toMerchantId: string;
+    qrcodeData: string;
+  };
 }
 
 @Injectable()
 export class PaymentService {
   private readonly promptpayMobileNumber: string;
+  private readonly bankAccountName: string;
   private readonly slipokApiKey: string;
   private readonly slipokEndpoint: string;
 
@@ -52,6 +90,8 @@ export class PaymentService {
     @Inject('PG_CONNECTION')
     private readonly db: Pool,
     private configService: ConfigService,
+
+    private readonly customerPurchaseOrdersService: CustomerPurchaseOrdersService,
   ) {
     this.promptpayMobileNumber = this.configService.get<string>(
       'appConfig.promptpayMobileNumber',
@@ -61,6 +101,9 @@ export class PaymentService {
     );
     this.slipokEndpoint = this.configService.get<string>(
       'appConfig.slipokEndpoint',
+    );
+    this.bankAccountName = this.configService.get<string>(
+      'appConfig.bankAccountName',
     );
 
     if (!this.promptpayMobileNumber) {
@@ -87,13 +130,15 @@ export class PaymentService {
   ): Promise<VerificationResult> {
     const { orderId, expectedAmount } = slipVerifyDto;
     try {
+      const orderCreatedDate = await this.getOrderCreatedDate(orderId);
+
       const formData = new FormData();
-      formData.append('file', file.buffer, {
+      formData.append('files', file.buffer, {
         filename: file.originalname,
         contentType: file.mimetype,
       });
 
-      const response = await axios.post<SlipResponse>(
+      const response = await axios.post<SlipApiResponse>(
         this.slipokEndpoint,
         formData,
         {
@@ -104,14 +149,53 @@ export class PaymentService {
         },
       );
 
-      const slipData = response.data;
+      const slipData = response.data.data;
 
-      if (!slipData) {
+      if (!slipData.success) {
         return {
           success: false,
           message: 'Invalid slip image',
           error: {
             code: 'INVALID_SLIP',
+          },
+        };
+      }
+
+      const transferDate = new Date(slipData.transTimestamp);
+      if (transferDate < orderCreatedDate) {
+        return {
+          success: false,
+          message: 'Transfer date is before order creation date',
+          error: {
+            code: 'INVALID_TRANSFER_DATE',
+          },
+          details: {
+            amount: slipData.amount,
+            sender_name: slipData.sender.displayName,
+            sender_bank: this.getBankName(slipData.sendingBank),
+            transaction_time: slipData.transTimestamp,
+            transaction_id: slipData.transRef,
+          },
+        };
+      }
+
+      const now = new Date();
+      const timeDifference = now.getTime() - transferDate.getTime();
+      const hoursDifference = timeDifference / (1000 * 60 * 60);
+
+      if (hoursDifference > 48) {
+        return {
+          success: false,
+          message: 'Transfer is too old (more than 48 hours)',
+          error: {
+            code: 'TRANSFER_TOO_OLD',
+          },
+          details: {
+            amount: slipData.amount,
+            sender_name: slipData.sender.displayName,
+            sender_bank: this.getBankName(slipData.sendingBank),
+            transaction_time: slipData.transTimestamp,
+            transaction_id: slipData.transRef,
           },
         };
       }
@@ -127,44 +211,50 @@ export class PaymentService {
           },
           details: {
             amount: slipData.amount,
-            sender_name: slipData.sender_name,
-            sender_bank: slipData.sender_bank_name,
-            transaction_time: slipData.time,
-            transaction_id: slipData.transaction_id,
+            sender_name: slipData.sender.displayName,
+            sender_bank: this.getBankName(slipData.sendingBank),
+            transaction_time: slipData.transTimestamp,
+            transaction_id: slipData.transRef,
           },
         };
       }
 
-      if (slipData.bank_account !== this.promptpayMobileNumber) {
+      if (slipData.receiver.displayName !== this.bankAccountName) {
         return {
           success: false,
           message: 'Payment was sent to wrong account',
           error: {
             code: 'WRONG_ACCOUNT',
-            expectedAccount: this.promptpayMobileNumber,
-            actualAccount: slipData.bank_account,
+            expectedAccount: this.bankAccountName,
+            actualAccount: slipData.receiver.displayName,
           },
           details: {
             amount: slipData.amount,
-            sender_name: slipData.sender_name,
-            sender_bank: slipData.sender_bank_name,
-            transaction_time: slipData.time,
-            transaction_id: slipData.transaction_id,
+            sender_name: slipData.sender.displayName,
+            sender_bank: this.getBankName(slipData.sendingBank),
+            transaction_time: slipData.transTimestamp,
+            transaction_id: slipData.transRef,
           },
         };
       }
 
-      await this.savePaymentDetails(orderId, slipData);
+      await this.savePaymentDetails(orderId, {
+        amount: slipData.amount,
+        transaction_id: slipData.transRef,
+        sender_name: slipData.sender.displayName,
+        sender_bank: this.getBankName(slipData.sendingBank),
+        transaction_time: slipData.transTimestamp,
+      });
 
       return {
         success: true,
         message: 'Payment verified successfully',
         details: {
           amount: slipData.amount,
-          sender_name: slipData.sender_name,
-          sender_bank: slipData.sender_bank_name,
-          transaction_time: slipData.time,
-          transaction_id: slipData.transaction_id,
+          sender_name: slipData.sender.displayName,
+          sender_bank: this.getBankName(slipData.sendingBank),
+          transaction_time: slipData.transTimestamp,
+          transaction_id: slipData.transRef,
         },
       };
     } catch (error) {
@@ -189,7 +279,29 @@ export class PaymentService {
     }
   }
 
-  private async savePaymentDetails(cpoId: string, slipData: SlipResponse) {
+  private getBankName(bankCode: string): string {
+    const bankMap: { [key: string]: string } = {
+      '014': 'SCB',
+      '004': 'KBANK',
+      '002': 'BBL',
+      '006': 'KTB',
+      '011': 'TMB',
+      '025': 'BAY',
+      // ... add more banks as needed
+    };
+    return bankMap[bankCode] || bankCode;
+  }
+
+  private async savePaymentDetails(
+    cpoId: string,
+    paymentData: {
+      amount: number;
+      transaction_id: string;
+      sender_name: string;
+      sender_bank: string;
+      transaction_time: string;
+    },
+  ) {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -206,10 +318,10 @@ export class PaymentService {
       `;
 
       const transactionValues = [
-        slipData.transaction_id,
+        paymentData.transaction_id,
         cpoId,
-        slipData.amount,
-        slipData.time,
+        paymentData.amount,
+        paymentData.transaction_time,
         'qr',
       ];
 
@@ -227,18 +339,52 @@ export class PaymentService {
         RETURNING id
       `;
 
-      await client.query(updateCPOQuery, [slipData.time, cpoId]);
+      await client.query(updateCPOQuery, [paymentData.transaction_time, cpoId]);
+
+      await this.customerPurchaseOrdersService.checkAndCreateMaterialRequisitions(
+        cpoId,
+        client,
+      );
 
       const historyQuery = `
         INSERT INTO history (
+          id,
           cpo_id,
           status,
           date_time
-        ) VALUES ($1, $2, $3)
+        ) VALUES ($1, $2, $3, $4)
         RETURNING id
       `;
 
-      await client.query(historyQuery, [cpoId, 'PAID', new Date()]);
+      await client.query(historyQuery, [uuidv4(), cpoId, 'PAID', new Date()]);
+
+      const getOrderLinesQuery = `
+        SELECT product_id, quantity 
+        FROM order_lines 
+        WHERE order_id = $1
+      `;
+
+      const orderLines = await client.query(getOrderLinesQuery, [cpoId]);
+
+      if (orderLines.rows.length > 0) {
+        const updateQueries = orderLines.rows.map(
+          (line, index) =>
+            `UPDATE products 
+             SET sale = COALESCE(sale, 0) + $${index * 2 + 1}
+             WHERE id = $${index * 2 + 2}`,
+        );
+
+        const updateSalesQuery = `
+          ${updateQueries.join(';')}
+        `;
+
+        const updateSalesValues = orderLines.rows.flatMap((line) => [
+          line.quantity,
+          line.product_id,
+        ]);
+
+        await client.query(updateSalesQuery, updateSalesValues);
+      }
 
       await client.query('COMMIT');
 
@@ -255,6 +401,30 @@ export class PaymentService {
       );
     } finally {
       client.release();
+    }
+  }
+
+  private async getOrderCreatedDate(orderId: string): Promise<Date> {
+    try {
+      const query = `
+        SELECT date_time 
+        FROM history 
+        WHERE cpo_id = $1 
+        AND status = 'NEW' 
+        ORDER BY date_time ASC 
+        LIMIT 1
+      `;
+
+      const result = await this.db.query(query, [orderId]);
+
+      if (!result.rows[0]) {
+        throw new Error('Order creation date not found');
+      }
+
+      return new Date(result.rows[0].date_time);
+    } catch (error) {
+      console.error('Error getting order creation date:', error);
+      throw new Error('Failed to get order creation date');
     }
   }
 }

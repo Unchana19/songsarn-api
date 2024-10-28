@@ -8,6 +8,7 @@ export default registerAs('appConfig', () => ({
   awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   awsS3Url: process.env.AWS_S3_URL,
   promptpayMobileNumber: process.env.PROMPTPAY_MOBILE_NUMBER,
+  bankAccountName: process.env.BANK_ACCOUNT_NAME,
   slipokApiKey: process.env.SLIPOK_API_KEY,
   slipokEndpoint: process.env.SLIPOK_ENDPOINTS,
 }));

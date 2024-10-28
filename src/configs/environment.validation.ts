@@ -15,4 +15,5 @@ export default Joi.object({
   PROMPTPAY_MOBILE_NUMBER: Joi.string().required(),
   SLIPOK_API_KEY: Joi.string().required(),
   SLIPOK_ENDPOINTS: Joi.string().required(),
+  BANK_ACCOUNT_NAME: Joi.string().required(),
 });
