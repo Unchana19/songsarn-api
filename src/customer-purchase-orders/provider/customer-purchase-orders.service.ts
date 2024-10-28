@@ -582,7 +582,7 @@ export class CustomerPurchaseOrdersService {
     );
   }
 
-  private async getAllMaterialUsage(cpoId: string) {
+  private async getAllMaterialUsage(cpoId: string, client: PoolClient) {
     try {
       const materialsQuery = `
       WITH color_usage AS (
@@ -598,7 +598,7 @@ export class CustomerPurchaseOrdersService {
         JOIN bom_products bp ON p.id = bp.product_id
         JOIN components c ON bp.component_id = c.id
         JOIN materials m ON bp.primary_color = m.id
-        WHERE cpo.id = $1 AND cpo.status = 'PAID'
+        WHERE cpo.id = $1
         GROUP BY cpo.id, bp.primary_color, m.name, m.unit
         
         UNION ALL
@@ -615,7 +615,7 @@ export class CustomerPurchaseOrdersService {
         JOIN bom_products bp ON p.id = bp.product_id
         JOIN components c ON bp.component_id = c.id
         JOIN materials m ON bp.pattern_color = m.id
-        WHERE cpo.id = $1 AND cpo.status = 'PAID' AND bp.pattern_color IS NOT NULL
+        WHERE cpo.id = $1 AND bp.pattern_color IS NOT NULL
         GROUP BY cpo.id, bp.pattern_color, m.name, m.unit
       ),
       material_usage AS (
@@ -632,7 +632,7 @@ export class CustomerPurchaseOrdersService {
         JOIN components c ON bp.component_id = c.id
         JOIN bom_components bc ON c.id = bc.component_id
         JOIN materials m ON bc.material_id = m.id
-        WHERE cpo.id = $1 AND cpo.status = 'PAID' AND m.color IS NULL
+        WHERE cpo.id = $1 AND m.color IS NULL
         GROUP BY cpo.id, bc.material_id, m.name, m.unit
       )
       SELECT 
@@ -646,7 +646,10 @@ export class CustomerPurchaseOrdersService {
         SELECT * FROM material_usage
       ) all_materials`;
 
-      const { rows: materials } = await this.db.query(materialsQuery, [cpoId]);
+      const { rows: materials } = await client.query(materialsQuery, [cpoId]);
+
+      console.log('Material usage results:', materials);
+
       return materials;
     } catch (error) {
       console.error('Error getting material usage:', error);
@@ -654,9 +657,11 @@ export class CustomerPurchaseOrdersService {
     }
   }
 
-  public async deductMaterialQuantities(cpoId: string) {
+  public async deductMaterialQuantities(cpoId: string, client: PoolClient) {
     try {
-      const materials = await this.getAllMaterialUsage(cpoId);
+      const materials = await this.getAllMaterialUsage(cpoId, client);
+
+      console.log('Materials to deduct:', materials); // Log เพื่อตรวจสอบ
 
       if (materials.length === 0) {
         return {
@@ -668,24 +673,35 @@ export class CustomerPurchaseOrdersService {
 
       const updatedMaterials = [];
       for (const material of materials) {
-        const updateQuery = `
-        UPDATE materials
-        SET quantity = quantity - $1
-        WHERE id = $2::uuid
-        RETURNING id, name, quantity as remaining_quantity
-      `;
+        console.log('Processing material:', material); // Log เพื่อตรวจสอบแต่ละ material
 
-        const { rows } = await this.db.query(updateQuery, [
+        if (!material.material_id) {
+          console.log('Missing material_id for:', material);
+          continue;
+        }
+
+        const updateQuery = `
+          UPDATE materials
+          SET quantity = GREATEST(0, quantity - $1)
+          WHERE id = $2
+          RETURNING id, name, quantity as remaining_quantity;
+        `;
+
+        const { rows } = await client.query(updateQuery, [
           material.quantity_needed,
           material.material_id,
         ]);
 
-        updatedMaterials.push({
-          name: material.material_name,
-          used_quantity: material.quantity_needed,
-          remaining_quantity: rows[0].remaining_quantity,
-          unit: material.unit,
-        });
+        console.log('Update result:', rows); // Log ผลลัพธ์การ update
+
+        if (rows.length > 0) {
+          updatedMaterials.push({
+            name: material.material_name,
+            used_quantity: material.quantity_needed,
+            remaining_quantity: rows[0].remaining_quantity,
+            unit: material.unit,
+          });
+        }
       }
 
       return {
@@ -705,9 +721,63 @@ export class CustomerPurchaseOrdersService {
     try {
       await client.query('BEGIN');
 
+      const checkQuery = `
+        SELECT id, status 
+        FROM customer_purchase_orders 
+        WHERE id = $1 AND status = 'PAID'
+      `;
+
+      const {
+        rows: [existingCPO],
+      } = await client.query(checkQuery, [id]);
+
+      if (!existingCPO) {
+        throw new Error('Order not found or not in PAID status');
+      }
+
+      const deductionResult = await this.deductMaterialQuantities(id, client);
+
       const updateQuery = `
         UPDATE customer_purchase_orders 
         SET status = 'PROCESSING'
+        WHERE id = $1
+        RETURNING id, status
+      `;
+
+      await client.query(updateQuery, [id]);
+
+      await this.historyService.create({
+        cpo_id: id,
+        status: 'PROCESSING',
+      });
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: 'CPO processed successfully',
+        cpo_id: id,
+        new_status: 'PROCESSING',
+        material_updates: deductionResult.materials,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error processing CPO:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  public async finishedProcessCPOById(id: string) {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const updateQuery = `
+        UPDATE customer_purchase_orders 
+        SET status = 'FINISHED PROCESS'
         WHERE id = $1
         RETURNING id, status
       `;
@@ -722,22 +792,106 @@ export class CustomerPurchaseOrdersService {
 
       await this.historyService.create({
         cpo_id: id,
-        status: 'PROCESSING',
+        status: 'FINISHED PROCESS',
       });
-      const deductionResult = await this.deductMaterialQuantities(id);
 
       await client.query('COMMIT');
 
       return {
         success: true,
-        message: 'CPO processed successfully',
+        message: 'CPO finished process successfully',
         cpo_id: id,
-        new_status: 'PROCESSING',
-        material_updates: deductionResult.materials,
+        new_status: 'FINISHED PROCESS',
       };
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error('Error processing CPO:', error);
+      console.error('Error finished process CPO:', error);
+      throw new Error('Failed to process Customer Purchase Order');
+    } finally {
+      client.release();
+    }
+  }
+
+  public async deliveryCPOById(id: string) {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const updateQuery = `
+        UPDATE customer_purchase_orders 
+        SET status = 'ON DELIVERY'
+        WHERE id = $1
+        RETURNING id, status
+      `;
+
+      const {
+        rows: [updatedCpo],
+      } = await client.query(updateQuery, [id]);
+
+      if (!updatedCpo) {
+        throw new Error('Order not found');
+      }
+
+      await this.historyService.create({
+        cpo_id: id,
+        status: 'ON DELIVERY',
+      });
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: 'CPO delivering successfully',
+        cpo_id: id,
+        new_status: 'ON DELIVERY',
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error delivering CPO:', error);
+      throw new Error('Failed to process Customer Purchase Order');
+    } finally {
+      client.release();
+    }
+  }
+
+  public async deliveryCompletedCPOById(id: string) {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const updateQuery = `
+        UPDATE customer_purchase_orders 
+        SET status = 'COMPLETED'
+        WHERE id = $1
+        RETURNING id, status
+      `;
+
+      const {
+        rows: [updatedCpo],
+      } = await client.query(updateQuery, [id]);
+
+      if (!updatedCpo) {
+        throw new Error('Order not found');
+      }
+
+      await this.historyService.create({
+        cpo_id: id,
+        status: 'COMPLETED',
+      });
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: 'CPO completed successfully',
+        cpo_id: id,
+        new_status: 'COMPLETED',
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error completed CPO:', error);
       throw new Error('Failed to process Customer Purchase Order');
     } finally {
       client.release();

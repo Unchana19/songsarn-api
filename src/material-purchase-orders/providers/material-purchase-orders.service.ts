@@ -2,7 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 import { CreateMaterialPurchaseOrderDto } from '../dtos/create-material-purchase-order.dto';
 import { v4 as uuidv4 } from 'uuid';
-import { MPOStatus } from '../enums/material-purchase-orders-status.enum';
 import { RequisitionsService } from 'src/requisitions/provider/requisitions.service';
 import { TransactionsService } from 'src/transactions/providers/transactions.service';
 import { UpdateMpoOrderLineDto } from '../dtos/update-mpo-order-line.dto';
@@ -41,7 +40,7 @@ export class MaterialPurchaseOrdersService {
       const mpo = await this.insertMPO(client, mpoId, supplier);
       const items = await this.insertMPOItems(client, mpoId, material);
 
-      await this.transactionsService.create({ po_id: mpoId });
+      await this.transactionsService.create({ po_id: mpoId, type: 'mpo' });
 
       const requisitions = material.map((m) => m.requisition_id);
       await this.requisitionsService.deleteManyById(requisitions);
@@ -64,7 +63,7 @@ export class MaterialPurchaseOrdersService {
     VALUES ($1, $2, $3)
     RETURNING *
   `;
-    const result = await client.query(query, [mpoId, supplier, MPOStatus.NEW]);
+    const result = await client.query(query, [mpoId, supplier, 'NEW']);
     return result.rows[0];
   }
 
@@ -251,7 +250,7 @@ export class MaterialPurchaseOrdersService {
   `;
 
     const { rows } = await this.db.query(query, [
-      'CANCELED',
+      'CANCELLED',
       0,
       new Date(),
       id,

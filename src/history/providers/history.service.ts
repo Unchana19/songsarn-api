@@ -56,4 +56,67 @@ export class HistoryService {
       throw new Error('Failed to get history records');
     }
   }
+
+  public async getAllHistory() {
+    const query = `
+      (
+        SELECT 
+          h.id,
+          h.cpo_id as reference_id,
+          h.status,
+          h.date_time,
+          'CPO' as type
+        FROM history h
+      )
+      UNION ALL
+      (
+        SELECT 
+          m.id,
+          m.id as reference_id,
+          m.status,
+          m.create_date_time as date_time,
+          'MPO' as type
+        FROM material_purchase_orders m
+        WHERE m.create_date_time IS NOT NULL
+      )
+      UNION ALL
+      (
+        SELECT 
+          m.id,
+          m.id as reference_id,
+          'RECEIVED' as status,
+          m.receive_date_time as date_time,
+          'MPO' as type
+        FROM material_purchase_orders m
+        WHERE m.receive_date_time IS NOT NULL
+      )
+      UNION ALL
+      (
+        SELECT 
+          m.id,
+          m.id as reference_id,
+          'CANCELLED' as status,
+          m.cancel_date_time as date_time,
+          'MPO' as type
+        FROM material_purchase_orders m
+        WHERE m.cancel_date_time IS NOT NULL
+      )
+      ORDER BY date_time DESC
+    `;
+
+    try {
+      const { rows } = await this.db.query(query);
+
+      return rows.map((row) => ({
+        id: row.id,
+        po_id: row.reference_id,
+        status: row.status,
+        date_time: row.date_time,
+        type: row.type,
+      }));
+    } catch (error) {
+      console.error('Error getting combined history:', error);
+      throw new Error('Failed to get history records');
+    }
+  }
 }

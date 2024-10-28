@@ -45,4 +45,19 @@ export class CustomerPurchaseOrdersController {
   public async processCPOById(@Param('id') id: string) {
     return this.customerPurchaseOrdersService.processCPOById(id);
   }
+
+  @Patch('manager/finished-process/:id')
+  public async finishedProcessCPOById(@Param('id') id: string) {
+    return this.customerPurchaseOrdersService.finishedProcessCPOById(id);
+  }
+
+  @Patch('manager/delivery/:id')
+  public async onDeliveryCPOById(@Param('id') id: string) {
+    return this.customerPurchaseOrdersService.deliveryCPOById(id);
+  }
+
+  @Patch('manager/delivery-completed/:id')
+  public async deliveryCompletedCPOById(@Param('id') id: string) {
+    return this.customerPurchaseOrdersService.deliveryCompletedCPOById(id);
+  }
 }

@@ -12,7 +12,7 @@ export class TransactionsService {
   ) {}
 
   public async create(createTransactionDto: CreateTransactionDto) {
-    const { po_id } = createTransactionDto;
+    const { po_id, type } = createTransactionDto;
 
     const existingTransaction = await this.findOneByPOId(po_id);
 
@@ -26,8 +26,8 @@ export class TransactionsService {
     const id = uuidv4();
 
     await this.db.query(
-      'INSERT INTO transactions (id, po_id) VALUES ($1, $2) RETURNING *',
-      [id, po_id],
+      'INSERT INTO transactions (id, po_id, type) VALUES ($1, $2, $3) RETURNING *',
+      [id, po_id, type],
     );
 
     const transaction = await this.findOneById(id);
@@ -96,5 +96,16 @@ export class TransactionsService {
     const { rows } = await this.db.query(query, [po_id]);
 
     return rows[0];
+  }
+
+  public async getAllTransaction() {
+    const query = `
+    SELECT id, po_id, amount, create_date_time, payment_method
+    FROM transactions
+  `;
+
+    const { rows } = await this.db.query(query);
+
+    return rows;
   }
 }

@@ -312,8 +312,9 @@ export class PaymentService {
           po_id,
           amount,
           create_date_time,
-          payment_method
-        ) VALUES ($1, $2, $3, $4, $5)
+          payment_method,
+          type
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
       `;
 
@@ -323,6 +324,7 @@ export class PaymentService {
         paymentData.amount,
         paymentData.transaction_time,
         'qr',
+        'cpo',
       ];
 
       const transactionResult = await client.query(
