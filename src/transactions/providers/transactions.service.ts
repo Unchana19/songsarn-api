@@ -71,14 +71,15 @@ export class TransactionsService {
 
     const query = `
     UPDATE transactions
-    SET payment_method = $1, amount = $2
-    WHERE po_id = $3
+    SET payment_method = $1, amount = $2, create_date_time = $3
+    WHERE po_id = $4
     RETURNING *
   `;
 
     const { rows } = await this.db.query(query, [
       payment_method,
       amount,
+      new Date(),
       po_id,
     ]);
 
@@ -98,10 +99,11 @@ export class TransactionsService {
     return rows[0];
   }
 
-  public async getAllTransaction() {
+  public async getAllTransactions() {
     const query = `
-    SELECT id, po_id, amount, create_date_time, payment_method
+    SELECT id, po_id, amount, create_date_time, payment_method, type
     FROM transactions
+    WHERE create_date_time IS NOT NULL
   `;
 
     const { rows } = await this.db.query(query);
