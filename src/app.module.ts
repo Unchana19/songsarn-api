@@ -25,6 +25,7 @@ import { CartsModule } from './carts/carts.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { HistoryModule } from './history/history.module';
 import { PaymentModule } from './payment/payment.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import appConfig from './configs/app.config';
 
 @Module({
@@ -53,6 +54,7 @@ import appConfig from './configs/app.config';
     DeliveryModule,
     HistoryModule,
     PaymentModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [
