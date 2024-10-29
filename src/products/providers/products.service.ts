@@ -5,13 +5,17 @@ import { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { ComponentItemsDto } from '../dtos/component-items.dto';
 import { UpdateProductDto } from '../dtos/update-product.dto';
+import { CustomizeProductDto } from '../dtos/customize-product.dto';
+import { CartsService } from 'src/carts/providers/carts.service';
 
 @Injectable()
 export class ProductsService {
   constructor(
     @Inject('PG_CONNECTION')
     private readonly db: Pool,
+
     private readonly uploadsService: UploadsService,
+    private readonly cartsService: CartsService,
   ) {}
 
   public async create(
@@ -347,5 +351,40 @@ export class ProductsService {
     } finally {
       client.release();
     }
+  }
+
+  public async customizeProduct(customizeProductDto: CustomizeProductDto) {
+    const { user_id, category_id, price, quantity, components } =
+      customizeProductDto;
+
+    const name = `P-${uuidv4().slice(0, 6)}-Custom`;
+    const detail = `This product is customize by U-${user_id.slice(0, 6)}`;
+
+    const product = await this.create({
+      category_id,
+      name,
+      price,
+      detail,
+      components,
+    });
+
+    const query = `
+      UPDATE products
+      SET custom_by = $1
+      WHERE id = $2
+      RETURNING *
+    `;
+
+    await this.db.query(query, [user_id, product.id]);
+
+    console.log(product);
+
+    await this.cartsService.addToCart({
+      product_id: product.id,
+      order_id: user_id,
+      quantity,
+    });
+
+    return { message: 'success' };
   }
 }

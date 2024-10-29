@@ -16,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateProductDto } from './dtos/update-product.dto';
 import { Auth } from 'src/auth/decorators/auth.decorator';
 import { AuthType } from 'src/auth/enums/auth-type.enum';
+import { CustomizeProductDto } from './dtos/customize-product.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -28,6 +29,13 @@ export class ProductsController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     return this.productsService.create(createProductDto, file);
+  }
+
+  @Post('customize')
+  public async customizeProduct(
+    @Body() customizeProductDto: CustomizeProductDto,
+  ) {
+    return this.productsService.customizeProduct(customizeProductDto);
   }
 
   @Get()

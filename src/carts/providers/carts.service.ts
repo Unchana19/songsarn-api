@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { AddToCartDto } from '../dtos/add-to-cart.dto';
@@ -11,7 +11,9 @@ export class CartsService {
   ) {}
 
   public async addToCart(addToCartDto: AddToCartDto) {
-    const { product_id, order_id } = addToCartDto;
+    const { product_id, order_id, quantity } = addToCartDto;
+
+    const quantityValue = quantity ?? 1;
 
     const existingOrder = await this.findOrder(addToCartDto);
     if (existingOrder) {
@@ -23,7 +25,7 @@ export class CartsService {
 
     const order = await this.db.query(
       'INSERT INTO order_lines (id, product_id, order_id, quantity) VALUES ($1, $2, $3, $4) RETURNING *',
-      [id, product_id, order_id, 1],
+      [id, product_id, order_id, quantityValue],
     );
 
     return order;
@@ -119,18 +121,68 @@ export class CartsService {
   }
 
   public async deleteOrderById(id: string) {
+    const client = await this.db.connect();
+
     try {
-      const query = `
-        DELETE FROM order_lines 
-        WHERE id = $1 
+      await client.query('BEGIN');
+
+      // First, get the order line and associated product details
+      const orderQuery = `
+        SELECT ol.*, p.custom_by, p.id as product_id 
+        FROM order_lines ol
+        JOIN products p ON ol.product_id = p.id
+        WHERE ol.id = $1
+      `;
+
+      const { rows: orderRows } = await client.query(orderQuery, [id]);
+
+      if (orderRows.length === 0) {
+        throw new HttpException('Order line not found', HttpStatus.NOT_FOUND);
+      }
+
+      const order = orderRows[0];
+
+      // Delete the order line
+      const deleteOrderQuery = `
+        DELETE FROM order_lines
+        WHERE id = $1
         RETURNING *
       `;
 
-      const { rows } = await this.db.query(query, [id]);
-      return { ...rows[0], removed: true };
+      const { rows: deletedOrderRows } = await client.query(deleteOrderQuery, [
+        id,
+      ]);
+
+      // If this is a custom product, delete it and its components
+      if (order.custom_by) {
+        // Delete BOM products first
+        await client.query('DELETE FROM bom_products WHERE product_id = $1', [
+          order.product_id,
+        ]);
+
+        // Then delete the product
+        await client.query('DELETE FROM products WHERE id = $1', [
+          order.product_id,
+        ]);
+      }
+
+      await client.query('COMMIT');
+
+      return { ...deletedOrderRows[0], removed: true };
     } catch (error) {
-      console.error('Error delete order:', error);
-      throw error;
+      await client.query('ROLLBACK');
+      console.error('Error deleting order:', error);
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        'Failed to delete order',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      client.release();
     }
   }
 }
