@@ -15,6 +15,9 @@ import { GetUserParamDto } from '../dtos/get-user-param.dto';
 import { FindOneByGoogleIdProvider } from './find-one-by-google-id.provider';
 import { CreateGoogleUserProvider } from './create-google-user.provider';
 import { GoogleUser } from '../interfaces/google-user.interface';
+import { UpdateProfileDto } from '../dtos/update-profile.dto';
+import { UploadsService } from 'src/uploads/providers/uploads.service';
+import { UpdateAddressDto } from '../dtos/update-address.dto';
 
 @Injectable()
 export class UsersService {
@@ -28,6 +31,7 @@ export class UsersService {
     private readonly findOneUserByEmailProvider: FindOneUserByEmailProvider,
     private readonly findOneByGoogleIdProvider: FindOneByGoogleIdProvider,
     private readonly createGoogleUserProvider: CreateGoogleUserProvider,
+    private readonly uploadsService: UploadsService,
   ) {}
 
   public async createUser(createUserDto: CreateUserDto) {
@@ -64,7 +68,16 @@ export class UsersService {
     getUserParamDto: GetUserParamDto,
   ): Promise<UserAuth | null> {
     const query = `
-      SELECT id, email, password, name, role, img, phone_number, address, lat, lng
+      SELECT id, 
+        email, 
+        password, 
+        name, 
+        role, 
+        img, 
+        phone_number, 
+        address,
+        CAST(lat AS FLOAT) as lat,
+        CAST(lng AS FLOAT) as lng
       FROM users
       WHERE id = $1
     `;
@@ -84,6 +97,67 @@ export class UsersService {
     `;
 
     const { rows } = await this.db.query(query, [getUserParamDto.id]);
+
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async updateUserById(
+    updateProfileDto: UpdateProfileDto,
+    file?: Express.Multer.File,
+  ) {
+    const { id, name, phone_number } = updateProfileDto;
+
+    const query = `
+    UPDATE users
+    SET name = $1,
+      phone_number = $2
+    WHERE id = $3
+    RETURNING *
+    `;
+
+    const { rows } = await this.db.query(query, [name, phone_number, id]);
+
+    if (file) {
+      await this.updateImg(id, file);
+    }
+
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async updateImg(id: string, file?: Express.Multer.File) {
+    const existingUser = await this.findOneById({ id });
+
+    if (!existingUser) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+
+    const filename = await this.uploadsService.uploadFile(file, id);
+
+    const query = `
+    UPDATE users
+    SET img = $1
+    WHERE id = $2
+    RETURNING *
+    `;
+
+    const { rows } = await this.db.query(query, [filename, id]);
+
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  public async updateAddressById(updateAddressDto: UpdateAddressDto) {
+    const { id, lat, lng, address } = updateAddressDto;
+
+    const query = `
+    UPDATE users
+    SET lat = $1,
+      lng = $2,
+      address = $3
+    WHERE id = $4
+    RETURNING *
+    `;
+
+    const { rows } = await this.db.query(query, [lat, lng, address, id]);
 
     return rows.length > 0 ? rows[0] : null;
   }
