@@ -897,4 +897,77 @@ export class CustomerPurchaseOrdersService {
       client.release();
     }
   }
+
+  public async checkAndCancelExpiredCPOs() {
+    const client = await this.db.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // ค้นหา CPO ที่มีสถานะ NEW และเกิน 2 วัน
+      const findExpiredQuery = `
+        WITH latest_history AS (
+          SELECT 
+            cpo_id,
+            MAX(date_time) as last_update
+          FROM history
+          WHERE status = 'NEW'
+          GROUP BY cpo_id
+        )
+        SELECT 
+          cpo.id
+        FROM customer_purchase_orders cpo
+        JOIN latest_history lh ON cpo.id = lh.cpo_id
+        WHERE 
+          cpo.status = 'NEW'
+          AND lh.last_update < NOW() - INTERVAL '2 days'
+      `;
+
+      const { rows: expiredCPOs } = await client.query(findExpiredQuery);
+
+      // ถ้าไม่มี CPO ที่ต้องยกเลิก
+      if (expiredCPOs.length === 0) {
+        await client.query('COMMIT');
+        return {
+          success: true,
+          message: 'No expired CPOs found',
+          cancelledCount: 0,
+        };
+      }
+
+      // อัปเดตสถานะเป็น CANCELLED สำหรับ CPO ที่หมดอายุ
+      const updateQuery = `
+        UPDATE customer_purchase_orders 
+        SET status = 'CANCELLED'
+        WHERE id = ANY($1)
+        RETURNING id
+      `;
+
+      const expiredCPOIds = expiredCPOs.map((cpo) => cpo.id);
+      await client.query(updateQuery, [expiredCPOIds]);
+
+      // บันทึกประวัติการยกเลิกสำหรับแต่ละ CPO
+      for (const cpoId of expiredCPOIds) {
+        await this.historyService.create({
+          cpo_id: cpoId,
+          status: 'CANCELLED',
+        });
+      }
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        message: `Successfully cancelled ${expiredCPOIds.length} expired CPOs`,
+        cancelledCount: expiredCPOIds.length,
+        cancelledCPOIds: expiredCPOIds,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error cancelling expired CPOs:', error);
+      throw new Error('Failed to cancel expired Customer Purchase Orders');
+    } finally {
+      client.release();
+    }
+  }
 }

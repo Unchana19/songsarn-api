@@ -134,13 +134,86 @@ export class ProductsService {
 
   public async findOneById(id: string) {
     const query = `
-      SELECT id, category_id, name, price, sale, detail, img
-      FROM products
-      WHERE id = $1
+      WITH product_data AS (
+        SELECT 
+          p.id,
+          p.category_id,
+          p.name,
+          p.price,
+          p.sale,
+          p.detail,
+          p.img
+        FROM products p
+        WHERE p.id = $1
+      ),
+      bom_data AS (
+        SELECT
+          bp.product_id,
+          JSON_AGG(
+            JSON_BUILD_OBJECT(
+              'component', JSON_BUILD_OBJECT(
+                'id', c.id,
+                'name', c.name,
+                'img', c.img
+              ),
+              'primary_color', CASE 
+                WHEN pc.id IS NOT NULL THEN
+                  JSON_BUILD_OBJECT(
+                    'id', pc.id,
+                    'name', pc.name,
+                    'color', pc.color
+                  )
+                ELSE NULL
+              END,
+              'pattern_color', CASE 
+                WHEN sc.id IS NOT NULL THEN
+                  JSON_BUILD_OBJECT(
+                    'id', sc.id,
+                    'name', sc.name,
+                    'color', sc.color
+                  )
+                ELSE NULL
+              END
+            )
+            ORDER BY c.name
+          ) as components
+        FROM bom_products bp
+        JOIN components c ON bp.component_id = c.id
+        LEFT JOIN materials pc ON bp.primary_color = pc.id
+        LEFT JOIN materials sc ON bp.pattern_color = sc.id
+        WHERE bp.product_id = $1
+        GROUP BY bp.product_id
+      )
+      SELECT 
+        pd.*,
+        COALESCE(bd.components, '[]'::json) as components
+      FROM product_data pd
+      LEFT JOIN bom_data bd ON pd.id = bd.product_id
     `;
 
     const { rows } = await this.db.query(query, [id]);
-    return rows.length > 0 ? rows[0] : null;
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const product = rows[0];
+
+    const components =
+      typeof product.components === 'string'
+        ? JSON.parse(product.components)
+        : product.components;
+
+    return {
+      id: product.id,
+      category_id: product.category_id,
+      name: product.name,
+      price: product.price,
+      sale: product.sale,
+      detail: product.detail,
+      img: product.img,
+      components: components,
+    };
   }
 
   public async findByCategory(categoryId: string) {
@@ -172,6 +245,7 @@ export class ProductsService {
     const query = `
       SELECT id, category_id, name, price, sale, detail, img
       FROM products
+      WHERE custom_by IS NULL
       ORDER BY sale DESC
     `;
 

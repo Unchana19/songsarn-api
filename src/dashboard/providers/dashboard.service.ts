@@ -299,7 +299,7 @@ export class DashboardService {
         CASE 
           WHEN quantity = 0 THEN 'Out'
           WHEN quantity <= threshold THEN 'Low'
-          ELSE 'Normal'
+          ELSE 'In stock'
         END as status
       FROM materials
       ORDER BY 
@@ -533,6 +533,7 @@ export class DashboardService {
         AND cpo.paid_date_time >= NOW() - INTERVAL '30 days'
         AND cpo.paid_date_time IS NOT NULL
     )
+        AND custom_by IS NULL
     ORDER BY days_without_sale DESC, p.price DESC
     LIMIT 5
   `;

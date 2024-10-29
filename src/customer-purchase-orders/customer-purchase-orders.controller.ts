@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CustomerPurchaseOrdersService } from './provider/customer-purchase-orders.service';
 import { CreateCPODto } from './dtos/create-cpo.dto';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Controller('customer-purchase-orders')
 export class CustomerPurchaseOrdersController {
@@ -59,5 +60,14 @@ export class CustomerPurchaseOrdersController {
   @Patch('manager/delivery-completed/:id')
   public async deliveryCompletedCPOById(@Param('id') id: string) {
     return this.customerPurchaseOrdersService.deliveryCompletedCPOById(id);
+  }
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleAutoCancellation() {
+    try {
+      await this.customerPurchaseOrdersService.checkAndCancelExpiredCPOs();
+    } catch (error) {
+      console.error('Error in auto-cancellation cron job:', error);
+    }
   }
 }
