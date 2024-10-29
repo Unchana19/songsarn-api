@@ -426,7 +426,7 @@ export class CustomerPurchaseOrdersService {
       WITH delivering_date AS (
         SELECT date_time
         FROM history
-        WHERE cpo_id = $1 AND status = 'ON DELIVERING'
+        WHERE cpo_id = $1 AND status = 'ON DELIVERY'
         ORDER BY date_time DESC
         LIMIT 1
       ),
