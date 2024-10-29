@@ -1,5 +1,5 @@
 import { Module, Global } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool, PoolConfig } from 'pg';
 import { DatabaseService } from './providers/database.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -11,16 +11,22 @@ import { ConfigService } from '@nestjs/config';
       provide: 'PG_CONNECTION',
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
-        const pool = new Pool({
-          user: configService.get<string>('database.user'),
-          host: configService.get<string>('database.host'),
-          database: configService.get<string>('database.name'),
-          password: configService.get<string>('database.password'),
-          port: +configService.get<number>('database.port'),
-        });
+        const config: PoolConfig = {
+          connectionString: configService.get<string>('database.url'),
+          ssl: true,
+        };
 
-        await pool.connect();
-        return pool;
+        const pool = new Pool(config);
+
+        try {
+          const client = await pool.connect();
+          console.log('Successfully connected to Neon database');
+          client.release();
+          return pool;
+        } catch (error) {
+          console.error('Error connecting to Neon database:', error);
+          throw error;
+        }
       },
     },
   ],
