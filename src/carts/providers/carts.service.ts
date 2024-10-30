@@ -11,6 +11,7 @@ export class CartsService {
   ) {}
 
   public async addToCart(addToCartDto: AddToCartDto) {
+    console.log(addToCartDto);
     const { product_id, order_id, quantity } = addToCartDto;
 
     let quantityValue = 1;
