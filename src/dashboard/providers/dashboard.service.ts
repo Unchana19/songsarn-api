@@ -309,6 +309,7 @@ export class DashboardService {
           ELSE 3
         END,
         name
+      LIMIT 5
     `;
 
     const { rows } = await this.db.query(query);

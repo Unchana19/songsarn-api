@@ -25,17 +25,17 @@ export class CartsController {
     return this.cartsService.getProductsInCartByOrderId(id);
   }
 
-  @Patch(':id/increase')
+  @Patch('/:id/increase')
   async increaseQuantity(@Param('id') id: string) {
     return this.cartsService.increaseQuantity(id);
   }
 
-  @Patch(':id/decrease')
+  @Patch('/:id/decrease')
   async decreaseQuantity(@Param('id') id: string) {
     return this.cartsService.decreaseQuantity(id);
   }
 
-  @Delete(':id/delete')
+  @Delete('/:id/delete')
   async deleteOrderByOrderId(@Param('id') id: string) {
     return this.cartsService.deleteOrderById(id);
   }
