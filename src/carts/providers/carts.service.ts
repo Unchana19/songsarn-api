@@ -13,7 +13,11 @@ export class CartsService {
   public async addToCart(addToCartDto: AddToCartDto) {
     const { product_id, order_id, quantity } = addToCartDto;
 
-    const quantityValue = quantity ?? 1;
+    let quantityValue = 1;
+
+    if (quantity) {
+      quantityValue = quantity;
+    }
 
     const existingOrder = await this.findOrder(addToCartDto);
     if (existingOrder) {

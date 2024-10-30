@@ -221,6 +221,7 @@ export class ProductsService {
       SELECT id, category_id, name, price, sale, detail, img
       FROM products
       WHERE category_id = $1
+      AND custom_by IS NULL
     `;
 
     const { rows } = await this.db.query(query, [categoryId]);
