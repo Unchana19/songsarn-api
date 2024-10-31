@@ -11,7 +11,6 @@ export class CartsService {
   ) {}
 
   public async addToCart(addToCartDto: AddToCartDto) {
-    console.log(addToCartDto);
     const { product_id, order_id, quantity } = addToCartDto;
 
     let quantityValue = 1;
@@ -52,21 +51,27 @@ export class CartsService {
 
   public async getProductsInCartByOrderId(id: string) {
     const query = `
-      SELECT 
-        ol.id AS id,
-        ol.quantity AS quantity,
-        p.id AS product_id,
-        p.name AS name,
-        p.img AS img,
-        p.price AS price
-      FROM order_lines ol
-      JOIN products p ON ol.product_id = p.id
-      WHERE ol.order_id = $1
-    `;
+        SELECT 
+          ol.id AS id,
+          ol.quantity AS quantity,
+          p.id AS product_id,
+          p.name AS name,
+          p.img AS img,
+          p.price AS price
+        FROM order_lines ol
+        JOIN products p ON ol.product_id = p.id
+        WHERE ol.order_id = $1
+      `;
 
     const { rows } = await this.db.query(query, [id]);
 
-    return rows.length > 0 ? rows : null;
+    console.log(rows);
+
+    if (rows.length > 0) {
+      return rows;
+    } else {
+      throw new HttpException('Order line not found', HttpStatus.NOT_FOUND);
+    }
   }
 
   public async increaseQuantity(id: string) {

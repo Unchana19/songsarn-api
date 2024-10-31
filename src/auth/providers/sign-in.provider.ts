@@ -25,8 +25,6 @@ export class SignInProvider {
 
     let isEqual: boolean = false;
 
-    console.log(signInDto);
-
     try {
       isEqual = await this.hashingProvider.comparePassword(
         signInDto.password,
