@@ -1,5 +1,5 @@
 import { Inject, Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 import generatePayload = require('promptpay-qr');
 import * as QRCode from 'qrcode';
@@ -427,6 +427,33 @@ export class PaymentService {
     }
   }
 
+  private async updateProductSales(client: PoolClient, cpoId: string) {
+    try {
+      const updateSalesQuery = `
+        UPDATE products p
+        SET sale = COALESCE(sale, 0) + (
+          SELECT CASE 
+            WHEN p.id = ol.product_id THEN ol.quantity 
+            ELSE 0 
+          END
+          FROM order_lines ol 
+          WHERE ol.order_id = $1 
+          AND ol.product_id = p.id
+        )
+        WHERE p.id IN (
+          SELECT product_id 
+          FROM order_lines 
+          WHERE order_id = $1
+        )
+      `;
+
+      await client.query(updateSalesQuery, [cpoId]);
+    } catch (error) {
+      console.error('Error updating product sales:', error);
+      throw error;
+    }
+  }
+
   public async testPayment(testPaymentDto: TestPaymentDto) {
     const client = await this.db.connect();
     try {
@@ -496,23 +523,7 @@ export class PaymentService {
       const orderLines = await client.query(getOrderLinesQuery, [cpoId]);
 
       if (orderLines.rows.length > 0) {
-        const updateQueries = orderLines.rows.map(
-          (line, index) =>
-            `UPDATE products 
-             SET sale = COALESCE(sale, 0) + $${index * 2 + 1}
-             WHERE id = $${index * 2 + 2}`,
-        );
-
-        const updateSalesQuery = `
-          ${updateQueries.join(';')}
-        `;
-
-        const updateSalesValues = orderLines.rows.flatMap((line) => [
-          line.quantity,
-          line.product_id,
-        ]);
-
-        await client.query(updateSalesQuery, updateSalesValues);
+        await this.updateProductSales(client, cpoId);
       }
 
       await client.query('COMMIT');
