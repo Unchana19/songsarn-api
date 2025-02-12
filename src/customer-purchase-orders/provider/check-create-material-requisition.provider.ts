@@ -76,27 +76,25 @@ export class CheckAndCreateMaterialRequisitionsProvider {
       const { rows: shortages } = await client.query(materialsQuery, [cpoId]);
 
       if (shortages.length > 0) {
-        // ตรวจสอบ existing requisitions โดยใช้ IN แทน ANY
         const checkExistingQuery = `
-          SELECT material_id::text, quantity
+          SELECT material_id, quantity
           FROM material_requisitions
-          WHERE material_id IN (${shortages.map((_, i) => `$${i + 1}`).join(',')})
+          WHERE material_id = ANY($1)
         `;
 
         const { rows: existingRequisitions } = await client.query(
           checkExistingQuery,
-          shortages.map((s) => s.material_id),
+          [shortages.map((s) => s.material_id)],
         );
 
         const existingMap = new Map(
           existingRequisitions.map((r) => [r.material_id, r.quantity]),
         );
 
-        // แยก materials เป็น 2 กลุ่ม
         const toInsert = [];
         const toUpdate = [];
 
-        shortages.forEach((shortage) => {
+        for (const shortage of shortages) {
           const existingQuantity = existingMap.get(shortage.material_id);
           if (existingQuantity === undefined) {
             toInsert.push(shortage);
@@ -106,7 +104,7 @@ export class CheckAndCreateMaterialRequisitionsProvider {
               currentQuantity: existingQuantity,
             });
           }
-        });
+        }
 
         // Insert new requisitions
         if (toInsert.length > 0) {
@@ -139,7 +137,7 @@ export class CheckAndCreateMaterialRequisitionsProvider {
             UPDATE material_requisitions 
             SET quantity = $1, 
                 create_date_time = NOW()
-            WHERE material_id = $2::uuid
+            WHERE material_id = $2
           `;
 
           await client.query(updateQuery, [newQuantity, material.material_id]);
@@ -164,7 +162,7 @@ export class CheckAndCreateMaterialRequisitionsProvider {
       };
     } catch (error) {
       console.error('Error checking materials:', error);
-      throw error; // ส่ง error ต่อให้ PaymentService จัดการ
+      throw error;
     }
   }
 }

@@ -61,6 +61,7 @@ export class CartsService {
         FROM order_lines ol
         JOIN products p ON ol.product_id = p.id
         WHERE ol.order_id = $1
+        ORDER BY ol.id
       `;
 
     const { rows } = await this.db.query(query, [id]);
