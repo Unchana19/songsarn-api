@@ -1,5 +1,5 @@
 import { Module, Global } from '@nestjs/common';
-import { Pool, PoolConfig } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
 import { DatabaseService } from './providers/database.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -12,13 +12,14 @@ import { ConfigService } from '@nestjs/config';
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
         const config: PoolConfig = {
-          // connectionString: configService.get<string>('database.url'),
-          // ssl: true,
-          user: configService.get<string>('database.user'),
-          host: configService.get<string>('database.host'),
-          database: configService.get<string>('database.name'),
-          password: configService.get<string>('database.password'),
-          port: +configService.get<number>('database.port'),
+          connectionString: configService.get<string>('database.url'),
+          ssl: true,
+
+          // user: configService.get<string>('database.user'),
+          // host: configService.get<string>('database.host'),
+          // database: configService.get<string>('database.name'),
+          // password: configService.get<string>('database.password'),
+          // port: +configService.get<number>('database.port'),
         };
 
         const pool = new Pool(config);
