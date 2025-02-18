@@ -33,6 +33,13 @@ export class ComponentsController {
     return this.componentsService.getAll();
   }
 
+  @Get('/category')
+  public async getComponentsByCategoryId(
+    @Query('categoryId') categoryId: string,
+  ) {
+    return this.componentsService.findByCategoryId(categoryId);
+  }
+
   @Get('/:id')
   public async getBOMComponent(@Param('id') id: string) {
     return this.componentsService.getBOMById(id);
