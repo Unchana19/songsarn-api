@@ -104,6 +104,7 @@ export class TransactionsService {
     SELECT id, po_id, amount, create_date_time, payment_method, type
     FROM transactions
     WHERE create_date_time IS NOT NULL
+    AND amount > 0
   `;
 
     const { rows } = await this.db.query(query);
