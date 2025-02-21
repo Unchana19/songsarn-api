@@ -2,6 +2,7 @@ import {
   Body,
   ClassSerializerInterceptor,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -27,6 +28,22 @@ export class UsersController {
   @Auth(AuthType.None)
   public createUser(@Body() createUserDto: CreateUserDto) {
     return this.usersService.createUser(createUserDto);
+  }
+
+  @Post('staff')
+  @UseInterceptors(ClassSerializerInterceptor)
+  public createStaff(@Body() createUserDto: CreateUserDto) {
+    return this.usersService.createStaff(createUserDto);
+  }
+
+  @Get('staff')
+  public findStaff() {
+    return this.usersService.findStaff();
+  }
+
+  @Delete('staff/:id')
+  public deleteStaff(@Param() getUserParamDto: GetUserParamDto) {
+    return this.usersService.deleteStaff(getUserParamDto);
   }
 
   @Get('/:id')

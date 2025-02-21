@@ -64,6 +64,64 @@ export class UsersService {
     return user;
   }
 
+  public async createStaff(createUserDto: CreateUserDto) {
+    const { name, email, phoneNumber, password, confirmPassword } =
+      createUserDto;
+
+    if (password !== confirmPassword) {
+      throw new Error('Passwords do not match');
+    }
+
+    const existingUser = await this.db.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email],
+    );
+
+    if (existingUser.rows.length > 0) {
+      throw new HttpException('User already exists', HttpStatus.BAD_REQUEST);
+    }
+
+    const userId = uuidv4();
+    const hashingPassword = await this.hashingProvider.hashPassword(password);
+
+    await this.db.query(
+      'INSERT INTO users (id, email, password, name, role, phone_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [userId, email, hashingPassword, name, 'staff', phoneNumber],
+    );
+
+    const user = await this.findOneById(userId);
+
+    return user;
+  }
+
+  public async findStaff() {
+    const query = `
+      SELECT id, 
+        email, 
+        name, 
+        role, 
+        img, 
+        phone_number, 
+        address,
+        CAST(lat AS FLOAT) as lat,
+        CAST(lng AS FLOAT) as lng
+      FROM users
+      WHERE role = 'staff'
+    `;
+
+    const { rows } = await this.db.query(query);
+
+    return rows;
+  }
+
+  public async deleteStaff(getUserParamDto: GetUserParamDto) {
+    const query = `
+      DELETE FROM users
+      WHERE id = $1
+    `;
+    await this.db.query(query, [getUserParamDto.id]);
+  }
+
   public async findOneById(
     getUserParamDto: GetUserParamDto,
   ): Promise<UserAuth | null> {
