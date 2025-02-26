@@ -66,8 +66,6 @@ export class CartsService {
 
     const { rows } = await this.db.query(query, [id]);
 
-    console.log(rows);
-
     if (rows.length > 0) {
       return rows;
     } else {
