@@ -30,12 +30,12 @@ export class LikesService {
         l.product_id AS product_id,
         p.name AS name,
         p.img AS img,
-        p.price AS price,
-        l.created_at AS created_at
+        p.price AS price
       FROM likes l
       JOIN products p
       ON l.product_id = p.id
       WHERE l.user_id = $1
+      ORDER BY l.created_at DESC
     `;
 
     const { rows } = await this.db.query(query, [user_id]);
