@@ -1,6 +1,7 @@
 export interface DashboardData {
   summary: DashboardSummary;
   dailyRevenue: DailyRevenue[];
+  forecastRevenue: DailyRevenue[];
   stockStatus: StockStatus[];
   topSellers: TopSeller[];
   recentTransactions: Transaction[];
@@ -32,7 +33,7 @@ export interface DashboardSummary {
 }
 
 export interface DailyRevenue {
-  day: string;
+  label: string;
   revenue: number;
 }
 
