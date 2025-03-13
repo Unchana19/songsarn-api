@@ -49,13 +49,11 @@ export class DashboardService {
       this.getRecentPurchaseOrders(),
     ]);
 
-    // Create a map of forecast data by label
     const forecastMap = new Map();
     for (const forecast of forecastRevenue) {
       forecastMap.set(forecast.label, forecast);
     }
 
-    // Combine dailyRevenue and forecastRevenue
     const combinedForecastRevenue = dailyRevenue.map((daily) => {
       const forecast = forecastMap.get(daily.label) || {};
       return {
@@ -63,8 +61,6 @@ export class DashboardService {
         revenue: Number(daily.revenue || 0) + Number(forecast.forecast || 0),
       };
     });
-
-    console.log(combinedForecastRevenue);
 
     return {
       summary,
@@ -163,7 +159,6 @@ export class DashboardService {
       dateRange.previousEndDate,
     ]);
 
-    // แปลงข้อมูลให้เป็นตัวเลขก่อนคำนวณ
     const summary = {
       revenue: {
         current: Number(data.current_revenue),
@@ -339,10 +334,10 @@ export class DashboardService {
               CASE WHEN cpo.paid_date_time IS NOT NULL THEN
                 (cpo.total_price - ((cpo.total_price - cpo.delivery_price) * 0.2 + cpo.delivery_price))
               ELSE 0 END
-            ), 0) as forecast,
-            COALESCE(SUM(t.amount), 0) as true_revenue
+            ), 0) as forecast
           FROM time_periods tp
           LEFT JOIN customer_purchase_orders cpo ON
+            cpo.paid_date_time::date = $1::date AND
             to_char(cpo.paid_date_time + INTERVAL '8 days', 'HH24:MI:SS') >= tp.period_start AND
             to_char(cpo.paid_date_time + INTERVAL '8 days', 'HH24:MI:SS') <= tp.period_end
           GROUP BY tp.period
