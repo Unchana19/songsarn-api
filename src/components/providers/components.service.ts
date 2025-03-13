@@ -118,6 +118,20 @@ export class ComponentsService {
     await client.query(query, params);
   }
 
+  public async findByCategoryId(categoryId: string) {
+    const query = `
+      SELECT id, category_id, name, price, color_primary_use, color_pattern_use, img
+      FROM components
+      WHERE category_id = $1
+    `;
+
+    const { rows } = await this.db.query(query, [categoryId]);
+
+    console.log(rows);
+
+    return rows;
+  }
+
   public async findOneById(id: string) {
     const query = `
       SELECT id, category_id, name, price, img

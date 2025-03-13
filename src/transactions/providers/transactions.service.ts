@@ -104,6 +104,8 @@ export class TransactionsService {
     SELECT id, po_id, amount, create_date_time, payment_method, type
     FROM transactions
     WHERE create_date_time IS NOT NULL
+    AND amount > 0
+    ORDER BY create_date_time DESC
   `;
 
     const { rows } = await this.db.query(query);

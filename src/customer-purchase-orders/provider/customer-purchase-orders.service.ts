@@ -396,7 +396,12 @@ export class CustomerPurchaseOrdersService {
       return {
         cpo: {
           id: order.id,
-          payment_status: order.paid_date_time ? 'Completed' : 'Not paid',
+          payment_status:
+            order.status === 'completed'
+              ? 'Fully paid'
+              : order.paid_date_time
+                ? 'Deposit paid'
+                : 'Not deposit paid',
           order_status: order.status,
           delivery_date: order.est_delivery_date,
           payment_method: order.payment_method,
@@ -861,21 +866,79 @@ export class CustomerPurchaseOrdersService {
     try {
       await client.query('BEGIN');
 
+      // Get the CPO details to calculate the remaining payment
+      const cpoQuery = `
+        SELECT id, total_price, delivery_price
+        FROM customer_purchase_orders
+        WHERE id = $1
+      `;
+
+      const { rows: cpoRows } = await client.query(cpoQuery, [id]);
+
+      if (cpoRows.length === 0) {
+        throw new Error('Order not found');
+      }
+
+      const { total_price, delivery_price } = cpoRows[0];
+      const restAmount =
+        total_price -
+        (Math.ceil((total_price - delivery_price) * 0.2) + delivery_price);
+
+      // Format current date in the required format (DD MMM YYYY)
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const monthAbbr = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      const month = monthAbbr[now.getMonth()];
+      const year = now.getFullYear();
+      const formattedDate = `${day} ${month} ${year}`;
+
+      // Update order status to completed and delivery date to now
       const updateQuery = `
         UPDATE customer_purchase_orders 
-        SET status = 'COMPLETED'
+        SET status = 'COMPLETED',
+            est_delivery_date = $2
         WHERE id = $1
         RETURNING id, status
       `;
 
-      const {
-        rows: [updatedCpo],
-      } = await client.query(updateQuery, [id]);
+      await client.query(updateQuery, [id, formattedDate]);
 
-      if (!updatedCpo) {
-        throw new Error('Order not found');
-      }
+      // Record the transaction for the remaining payment
+      const transactionQuery = `
+        INSERT INTO transactions (
+          id,
+          po_id,
+          amount,
+          create_date_time,
+          payment_method,
+          type
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `;
 
+      const { rows: transactionRows } = await client.query(transactionQuery, [
+        uuidv4(),
+        id,
+        restAmount,
+        now,
+        'qr',
+        'cpo',
+      ]);
+
+      // Create history record
       await this.historyService.create({
         cpo_id: id,
         status: 'COMPLETED',
@@ -888,10 +951,15 @@ export class CustomerPurchaseOrdersService {
         message: 'CPO completed successfully',
         cpo_id: id,
         new_status: 'COMPLETED',
+        transaction: {
+          id: transactionRows[0].id,
+          amount: restAmount,
+          type: 'cpo',
+        },
       };
     } catch (error) {
       await client.query('ROLLBACK');
-      console.error('Error completed CPO:', error);
+      console.error('Error completing CPO:', error);
       throw new Error('Failed to process Customer Purchase Order');
     } finally {
       client.release();

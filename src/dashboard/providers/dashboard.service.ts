@@ -28,6 +28,7 @@ export class DashboardService {
     const [
       summary,
       dailyRevenue,
+      forecastRevenue,
       stockStatus,
       topSellers,
       recentTransactions,
@@ -36,6 +37,11 @@ export class DashboardService {
     ] = await Promise.all([
       this.getSummary(dateRange),
       this.getDailyRevenue(dateRange.startDate, dateRange.endDate, timeframe),
+      this.getForecastRevenue(
+        dateRange.startDate,
+        dateRange.endDate,
+        timeframe,
+      ),
       this.getStockStatus(),
       this.getTopSellers(dateRange.startDate, dateRange.endDate),
       this.getRecentTransactions(dateRange.startDate, dateRange.endDate),
@@ -43,9 +49,23 @@ export class DashboardService {
       this.getRecentPurchaseOrders(),
     ]);
 
+    const forecastMap = new Map();
+    for (const forecast of forecastRevenue) {
+      forecastMap.set(forecast.label, forecast);
+    }
+
+    const combinedForecastRevenue = dailyRevenue.map((daily) => {
+      const forecast = forecastMap.get(daily.label) || {};
+      return {
+        label: daily.label,
+        revenue: Number(daily.revenue || 0) + Number(forecast.forecast || 0),
+      };
+    });
+
     return {
       summary,
       dailyRevenue,
+      forecastRevenue: combinedForecastRevenue,
       stockStatus,
       topSellers,
       recentTransactions,
@@ -139,7 +159,6 @@ export class DashboardService {
       dateRange.previousEndDate,
     ]);
 
-    // แปลงข้อมูลให้เป็นตัวเลขก่อนคำนวณ
     const summary = {
       revenue: {
         current: Number(data.current_revenue),
@@ -184,7 +203,7 @@ export class DashboardService {
     timeframe: 'day' | 'week' | 'month' | 'year',
   ): Promise<DailyRevenue[]> {
     let query = '';
-    let params: any[] = [];
+    let params: Date[] = [];
 
     switch (timeframe) {
       case 'day':
@@ -289,6 +308,130 @@ export class DashboardService {
     return rows;
   }
 
+  private async getForecastRevenue(
+    startDate: Date,
+    endDate: Date,
+    timeframe: 'day' | 'week' | 'month' | 'year',
+  ): Promise<DailyRevenue[]> {
+    let query = '';
+    let params: Date[] = [];
+
+    switch (timeframe) {
+      case 'day':
+        query = `
+          WITH time_periods AS (
+            SELECT period, period_start, period_end FROM (
+              VALUES 
+                ('Morning', '06:00:00', '11:59:59'),
+                ('Afternoon', '12:00:00', '17:59:59'),
+                ('Evening', '18:00:00', '23:59:59'),
+                ('Night', '00:00:00', '05:59:59')
+            ) as t(period, period_start, period_end)
+          )
+          SELECT 
+            tp.period as label,
+            COALESCE(SUM(
+              CASE WHEN cpo.paid_date_time IS NOT NULL THEN
+                (cpo.total_price - ((cpo.total_price - cpo.delivery_price) * 0.2 + cpo.delivery_price))
+              ELSE 0 END
+            ), 0) as forecast,
+            COALESCE(SUM(t.amount), 0) as true_revenue
+          FROM time_periods tp
+          LEFT JOIN customer_purchase_orders cpo ON
+            to_char(cpo.paid_date_time + INTERVAL '8 days', 'HH24:MI:SS') >= tp.period_start AND
+            to_char(cpo.paid_date_time + INTERVAL '8 days', 'HH24:MI:SS') <= tp.period_end
+          GROUP BY tp.period
+          ORDER BY 
+            CASE tp.period
+              WHEN 'Morning' THEN 1
+              WHEN 'Afternoon' THEN 2
+              WHEN 'Evening' THEN 3
+              WHEN 'Night' THEN 4
+            END
+        `;
+        params = [startDate];
+        break;
+
+      case 'week':
+        query = `
+          WITH RECURSIVE dates AS (
+            SELECT $1::date as date
+            UNION ALL
+            SELECT date + 1
+            FROM dates
+            WHERE date < $2::date
+          )
+          SELECT 
+            to_char(d.date, 'Dy') as label,
+            COALESCE(SUM(
+              CASE WHEN cpo.status != 'NEW' THEN
+                0.8 * (cpo.total_price - cpo.delivery_price)
+              ELSE 0 END
+            ), 0) as forecast
+          FROM dates d
+          LEFT JOIN customer_purchase_orders cpo ON 
+            (cpo.paid_date_time + INTERVAL '8 days')::date = d.date
+            AND cpo.paid_date_time IS NOT NULL
+          GROUP BY d.date
+          ORDER BY d.date
+        `;
+        params = [startDate, endDate];
+        break;
+
+      case 'month':
+        query = `
+          WITH week_ranges AS (
+            SELECT
+              DATE_TRUNC('week', generate_series($1::date, $2::date, '1 week'::interval)) as week_start,
+              DATE_TRUNC('week', generate_series($1::date, $2::date, '1 week'::interval)) + interval '6 days' as week_end
+          )
+          SELECT 
+            'Week ' || TO_CHAR(week_start, 'W') as label,
+            COALESCE(SUM(
+              CASE WHEN cpo.status != 'NEW' THEN
+                (cpo.total_price - ((cpo.total_price - cpo.delivery_price) * 0.2 + cpo.delivery_price))
+              ELSE 0 END
+            ), 0) as forecast
+          FROM week_ranges wr
+          LEFT JOIN customer_purchase_orders cpo ON 
+            (cpo.paid_date_time + INTERVAL '8 days')::date >= wr.week_start AND
+            (cpo.paid_date_time + INTERVAL '8 days')::date <= wr.week_end
+          GROUP BY week_start
+          ORDER BY week_start
+        `;
+        params = [startDate, endDate];
+        break;
+
+      case 'year':
+        query = `
+          WITH months AS (
+            SELECT generate_series(
+              DATE_TRUNC('month', $1::date),
+              DATE_TRUNC('month', $2::date),
+              '1 month'::interval
+            ) as month_start
+          )
+          SELECT 
+            TO_CHAR(month_start, 'Mon') as label,
+            COALESCE(SUM(
+              CASE WHEN cpo.status != 'NEW' THEN
+                (cpo.total_price - ((cpo.total_price - cpo.delivery_price) * 0.2 + cpo.delivery_price))
+              ELSE 0 END
+            ), 0) as forecast
+          FROM months m
+          LEFT JOIN customer_purchase_orders cpo ON 
+            DATE_TRUNC('month', cpo.paid_date_time + INTERVAL '8 days') = m.month_start
+          GROUP BY month_start
+          ORDER BY month_start
+        `;
+        params = [startDate, endDate];
+        break;
+    }
+
+    const { rows } = await this.db.query(query, params);
+    return rows;
+  }
+
   private async getStockStatus(): Promise<StockStatus[]> {
     const query = `
       SELECT 
@@ -309,7 +452,7 @@ export class DashboardService {
           ELSE 3
         END,
         name
-      LIMIT 5
+      LIMIT 7
     `;
 
     const { rows } = await this.db.query(query);
@@ -349,7 +492,7 @@ export class DashboardService {
         previousEndDate.setHours(23, 59, 59, 999);
         break;
 
-      case 'week':
+      case 'week': {
         // Current week (Sunday to Saturday)
         const dayOfWeek = startDate.getDay();
         startDate.setDate(date.getDate() - dayOfWeek); // Go to Sunday
@@ -364,6 +507,7 @@ export class DashboardService {
         previousEndDate.setDate(endDate.getDate() - 7);
         previousEndDate.setHours(23, 59, 59, 999);
         break;
+      }
 
       case 'month':
         // Current month

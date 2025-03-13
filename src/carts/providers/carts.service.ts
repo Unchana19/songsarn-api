@@ -66,13 +66,23 @@ export class CartsService {
 
     const { rows } = await this.db.query(query, [id]);
 
-    console.log(rows);
-
     if (rows.length > 0) {
       return rows;
     } else {
       throw new HttpException('Order line not found', HttpStatus.NOT_FOUND);
     }
+  }
+
+  public async getCountOfProductsInCartByOrderId(id: string) {
+    const query = `
+      SELECT COUNT(*) 
+      FROM order_lines 
+      WHERE order_id = $1
+    `;
+
+    const { rows } = await this.db.query(query, [id]);
+
+    return rows[0].count;
   }
 
   public async increaseQuantity(id: string) {

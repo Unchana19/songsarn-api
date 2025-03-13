@@ -26,6 +26,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { HistoryModule } from './history/history.module';
 import { PaymentModule } from './payment/payment.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { LikesModule } from './likes/likes.module';
 import appConfig from './configs/app.config';
 
 @Module({
@@ -55,6 +56,7 @@ import appConfig from './configs/app.config';
     HistoryModule,
     PaymentModule,
     DashboardModule,
+    LikesModule,
   ],
   controllers: [AppController],
   providers: [
