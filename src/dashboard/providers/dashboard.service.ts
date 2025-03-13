@@ -49,11 +49,13 @@ export class DashboardService {
       this.getRecentPurchaseOrders(),
     ]);
 
+    // Create a map of forecast data by label
     const forecastMap = new Map();
     for (const forecast of forecastRevenue) {
       forecastMap.set(forecast.label, forecast);
     }
 
+    // Combine dailyRevenue and forecastRevenue
     const combinedForecastRevenue = dailyRevenue.map((daily) => {
       const forecast = forecastMap.get(daily.label) || {};
       return {
@@ -61,6 +63,8 @@ export class DashboardService {
         revenue: Number(daily.revenue || 0) + Number(forecast.forecast || 0),
       };
     });
+
+    console.log(combinedForecastRevenue);
 
     return {
       summary,
@@ -159,6 +163,7 @@ export class DashboardService {
       dateRange.previousEndDate,
     ]);
 
+    // แปลงข้อมูลให้เป็นตัวเลขก่อนคำนวณ
     const summary = {
       revenue: {
         current: Number(data.current_revenue),

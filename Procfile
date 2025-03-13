@@ -1,1 +1,1 @@
-web: bun run start:prod
+web: npm run start:prod
