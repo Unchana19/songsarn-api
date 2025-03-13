@@ -25,6 +25,11 @@ export class CartsController {
     return this.cartsService.getProductsInCartByOrderId(id);
   }
 
+  @Get('count')
+  public async getCountOfProductsInCartByOrderId(@Query('id') id: string) {
+    return this.cartsService.getCountOfProductsInCartByOrderId(id);
+  }
+
   @Patch('/:id/increase')
   async increaseQuantity(@Param('id') id: string) {
     return this.cartsService.increaseQuantity(id);

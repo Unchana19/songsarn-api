@@ -73,6 +73,18 @@ export class CartsService {
     }
   }
 
+  public async getCountOfProductsInCartByOrderId(id: string) {
+    const query = `
+      SELECT COUNT(*) 
+      FROM order_lines 
+      WHERE order_id = $1
+    `;
+
+    const { rows } = await this.db.query(query, [id]);
+
+    return rows[0].count;
+  }
+
   public async increaseQuantity(id: string) {
     try {
       const query = `
